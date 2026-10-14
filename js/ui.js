@@ -14,6 +14,11 @@ const anyComp=id=>Object.values(G.reactors).some(R=>isReal(R)&&R.tiles.some(t=>t
 Object.assign(G.stats,{sells:0,slow:0,hoverCell:0,placeInfo:0,lab:0});
 G.tut=0;G.tutHidden=false;G.unl={};
 const rnd=(a,b)=>a+Math.random()*(b-a);
+const mq=window.matchMedia('(max-width:760px)');
+const isMobile=()=>mq.matches;
+function applyMobileClass(){document.body.classList.toggle('mobile',isMobile());if(!isMobile())document.body.classList.remove('sheet-open')}
+applyMobileClass();
+mq.addEventListener('change',()=>{applyMobileClass();if(view==='game'&&curReactor)renderGame()});
 
 /* ---- preferencias de interfaz y revelado progresivo ---- */
 const UIKEY='reactorIdleUI';
@@ -116,7 +121,7 @@ function checkAch(){
 }
 const solarNextToGen=()=>realReactors().some(R=>R.tiles.some(t=>t.c&&t.c.id==='solarCell'&&near(R,t,N4).some(n=>n.c&&n.c.st.type==='HeatToPowerConverter')));
 const TUT=[
- {t:'Construye una <b>turbina eólica</b>: elígela en <i>Construcción</i> y haz clic en un cuadro de pasto.',ok:()=>G.stats.built>=1},
+ {t:'Construye una <b>turbina eólica</b>: elígela en <i>Construcción</i> (en el celular, botón <i>Piezas</i>) y toca un cuadro de pasto.',ok:()=>G.stats.built>=1},
  {t:'Espera unos segundos y pulsa <b>Vender toda la energía</b>.',ok:()=>G.stats.sells>=1},
  {t:'Con unos $100 ve a <b>Investigación</b> y compra <b>Centro de investigación</b>.',ok:()=>gres('researchCenter')>=1},
  {t:'Construye un <b>Centro de investigación</b> en el mapa: te da puntos para nuevas tecnologías.',ok:()=>anyComp('researchCenter')},
@@ -268,6 +273,12 @@ function renderGame(){
       <div class="ov zoomctl" id="zoomctl"><button id="zIn" title="Acercar (+)">＋</button><button id="zOut" title="Alejar (−)">－</button><button id="zReset" title="Vista normal (0)">⌂</button><span id="zLvl">1.0×</span></div>
     </div>
    </div>
+  </div>
+  <div id="mbar">
+    <button id="mbMove" data-m="pan"><span>✋</span><small>Mover</small></button>
+    <button id="mbBuild" data-m="build"><span>🔨</span><small>Construir</small></button>
+    <button id="mbSell" data-m="sell"><span>🗑</span><small>Vender</small></button>
+    <button id="mbPiece"><span id="mbIcon"></span><small id="mbName">Piezas</small></button>
   </div>`;
   cv=$('#cv');g2=cv.getContext('2d');paletteEl=$('#palette');
   setupCanvas(R);buildPalette();renderTut();updateButtons();refreshHud();renderSelBox();renderStepBox();
@@ -288,7 +299,7 @@ function renderGame(){
   $('#calcPop').onclick=e=>e.stopPropagation();
   $('#bLong').onclick=()=>{const r=simulate(R,300);
     $('#longRes').innerHTML=r.booms.length?`<span class="bad">💥 ${r.booms.length} pieza(s) explotarían en 300 ticks. La primera: ${r.booms[0].name} (${r.booms[0].x+1},${r.booms[0].y+1}) en ${r.booms[0].tick} ticks.</span>`:`<span class="good">✓ Estable 300 ticks.</span> Energía media ${nf(r.avgPower)}/tick · dinero ${nf(r.avgMoney)}/tick.`};
-  camReset();bindZoomUI();bindCanvas(R);
+  camReset();bindZoomUI();bindCanvas(R);bindMobileBar(R);
   getBase(R,true);applyDisclosure(R);
 }
 document.addEventListener('click',()=>{const p=$('#calcPop');if(p)p.style.display='none'});
@@ -307,6 +318,9 @@ function updateButtons(){
   set('#mBuild',mode==='build');set('#mSell',mode==='sell');set('#mSel',mode==='select'||mode==='paste');set('#mPaint',paint);
   set('#bHeatView',showHeatView);set('#bNums',showNums);set('#bSlow',stepMode);
   const p=$('#bPause');if(p)p.textContent=paused?'▶ Continuar':'⏸ Pausa';
+  const mb=(id,on)=>{const e=$(id);if(e)e.classList.toggle('on',!!on)};
+  mb('#mbMove',mode==='pan');mb('#mbBuild',mode==='build'||mode==='paste');mb('#mbSell',mode==='sell');
+  updateMbPiece();
   applyDisclosure();
 }
 function sellAllPower(){
@@ -342,7 +356,7 @@ function buildPalette(){
   paletteEl.innerHTML=h;
   paletteEl.onmouseleave=()=>showInfoText('');
   paletteEl.querySelectorAll('.comp').forEach(el=>{
-    el.onclick=()=>{selComp=CBY[el.dataset.id];if(mode!=='build'&&mode!=='paste')setMode('build');buildPalette();showCompInfo(R,selComp);sfx.click()};
+    el.onclick=()=>{selComp=CBY[el.dataset.id];if(mode!=='build'&&mode!=='paste')setMode('build');buildPalette();if(isMobile()){document.body.classList.remove('sheet-open');updateButtons()}else showCompInfo(R,selComp);sfx.click()};
     el.onmouseover=()=>showCompInfo(R,CBY[el.dataset.id]);
   });
   updatePaletteDim();
@@ -353,10 +367,13 @@ function updatePaletteDim(){
 }
 
 /* ---- tooltip flotante (sustituye al panel de información) ---- */
+let tipTimer=null;
 function showInfoText(t){
   if(!tipEl){tipEl=document.createElement('div');tipEl.id='tip';document.body.append(tipEl)}
+  clearTimeout(tipTimer);
   if(!t){tipEl.style.display='none';return}
   tipEl.innerHTML=t;tipEl.style.display='block';placeTip();
+  if(isMobile())tipTimer=setTimeout(()=>{tipEl.style.display='none'},5500);
 }
 function placeTip(){
   if(!tipEl||tipEl.style.display==='none')return;
@@ -776,7 +793,7 @@ function camZoomAt(mx,my,z){
   z=Math.max(1,Math.min(4,z));
   const wx=cam.tx+mx/cam.tz,wy=cam.ty+my/cam.tz;   // el punto bajo el cursor se queda quieto
   cam.tz=z;cam.tx=wx-mx/z;cam.ty=wy-my/z;clampCam();
-  if(!uiPrefs.zoomHint&&z>1.05){uiPrefs.zoomHint=true;saveUI();toast('🔎 <b>Zoom</b><br><span class="small">Rueda del mouse: acercar/alejar · mantén el botón central o Espacio + arrastrar para moverte · tecla 0: vista normal</span>')}
+  if(!uiPrefs.zoomHint&&z>1.05){uiPrefs.zoomHint=true;saveUI();toast(isMobile()?'🔎 <b>Zoom</b><br><span class="small">Pellizca con dos dedos para acercar y mover. Con el modo ✋ Mover arrastras con un dedo.</span>':'🔎 <b>Zoom</b><br><span class="small">Rueda del mouse: acercar/alejar · mantén el botón central o Espacio + arrastrar para moverte · tecla 0: vista normal</span>')}
 }
 function zoomBtn(f){const R=curR();camZoomAt(R.meta.w*TS/2,R.meta.h*TS/2,cam.tz*f)}
 function panKey(k){
@@ -794,6 +811,30 @@ function stepCam(){
   g2.setTransform(1,0,0,1,0,0);g2.clearRect(0,0,cv.width,cv.height);
   g2.setTransform(dpr*cam.z,0,0,dpr*cam.z,-cam.x*dpr*cam.z,-cam.y*dpr*cam.z);
   const zl=$('#zLvl');if(zl){const t=cam.tz.toFixed(1)+'×';if(zl.textContent!==t)zl.textContent=t}
+}
+function updateMbPiece(){
+  const ic=$('#mbIcon'),nm=$('#mbName');if(!ic)return;
+  ic.innerHTML=selComp?iconImg(selComp,28):'🧱';
+  nm.textContent=selComp?nf(selComp.price):'Piezas';
+}
+function bindMobileBar(R){
+  const q=id=>$(id);
+  q('#mbMove').onclick=()=>setMode('pan');
+  q('#mbBuild').onclick=()=>{setMode('build');if(!selComp)document.body.classList.add('sheet-open')};
+  q('#mbSell').onclick=()=>setMode('sell');
+  q('#mbPiece').onclick=()=>document.body.classList.toggle('sheet-open');
+  updateMbPiece();
+  if(!isMobile())return;
+  // zoom inicial para poder tocar casillas con precisión, centrado en tus piezas (o en la tierra firme)
+  let pts=R.tiles.filter(t=>t.c);if(!pts.length)pts=R.tiles.filter(t=>t.terrain==='grass');
+  const mx=pts.reduce((a,t)=>a+t.x,0)/Math.max(1,pts.length)+.5,my=pts.reduce((a,t)=>a+t.y,0)/Math.max(1,pts.length)+.5;
+  const z=Math.min(3,Math.max(1.8,R.meta.w*TS*.5/ (TS*7)));
+  const zh=uiPrefs.zoomHint;uiPrefs.zoomHint=true;   // el zoom inicial no debe mostrar el aviso
+  camZoomAt(R.meta.w*TS/2,R.meta.h*TS/2,z);
+  uiPrefs.zoomHint=zh;
+  cam.tx=mx*TS-R.meta.w*TS/(2*cam.tz);cam.ty=my*TS-R.meta.h*TS/(2*cam.tz);clampCam();
+  cam.z=cam.tz;cam.x=cam.tx;cam.y=cam.ty;
+  mode=selComp?'build':'pan';document.body.classList.remove('sheet-open');updateButtons();
 }
 function bindZoomUI(){
   $('#zIn').onclick=()=>zoomBtn(1.3);$('#zOut').onclick=()=>zoomBtn(1/1.3);$('#zReset').onclick=camHome;
@@ -839,8 +880,8 @@ function bindCanvas(R){
   },{passive:false});
   cv.addEventListener('pointerdown',e=>{
     if(e.pointerType==='touch'){touches.set(e.pointerId,{x:e.clientX,y:e.clientY});if(touches.size===2){startPinch();return}}
-    if(e.button===1||spaceDown){   // mover el mapa
-      ptr={act:'pan',lx:e.clientX,ly:e.clientY};cv.style.cursor='grabbing';
+    if(e.button===1||spaceDown||(mode==='pan'&&e.button===0)){   // mover el mapa
+      ptr={act:'pan',lx:e.clientX,ly:e.clientY,sx:e.clientX,sy:e.clientY,moved:false};cv.style.cursor='grabbing';
       try{cv.setPointerCapture(e.pointerId)}catch(_){}
       e.preventDefault();return;
     }
@@ -859,7 +900,9 @@ function bindCanvas(R){
     if(ptr&&ptr.act==='pan'){
       const m=mapUnits(e);
       cam.tx-=(e.clientX-ptr.lx)/m.rw*R.meta.w*TS/cam.z;cam.ty-=(e.clientY-ptr.ly)/m.rh*R.meta.h*TS/cam.z;
-      clampCam();cam.x=cam.tx;cam.y=cam.ty;ptr.lx=e.clientX;ptr.ly=e.clientY;return;
+      clampCam();cam.x=cam.tx;cam.y=cam.ty;ptr.lx=e.clientX;ptr.ly=e.clientY;
+      if(Math.hypot(e.clientX-ptr.sx,e.clientY-ptr.sy)>7)ptr.moved=true;
+      return;
     }
     const t=evtTile(e);hover=t;if(!t){showInfoText('');return}
     if(ptr&&ptr.act==='select'&&sel){sel.x1=t.x;sel.y1=t.y;return}
@@ -869,7 +912,7 @@ function bindCanvas(R){
   const up=e=>{
     if(e&&e.pointerId!==undefined){touches.delete(e.pointerId);if(touches.size<2)pinch=null}
     if(ptr&&ptr.act==='select'){renderSelBox()}
-    if(ptr&&ptr.act==='pan')cv.style.cursor='';
+    if(ptr&&ptr.act==='pan'){cv.style.cursor='';if(!ptr.moved&&e&&e.clientX!==undefined){const t=evtTile(e);if(t){hover=t;showTileInfo(R,t)}}}
     endGroup();mouseDownNow=false;ptr=null;lastTile=null;refreshHud();
   };
   cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
@@ -1127,6 +1170,14 @@ $('#bAch').onclick=()=>{
   const n=ACH.filter(a=>G.ach[a.id]).length;
   const m=modal(`<button style="float:right" id="cls">Cerrar</button><h3>Logros (${n}/${ACH.length})</h3><div class="grid">`+ACH.map(a=>`<div class="gc ${G.ach[a.id]?'ok':'done'}"><div class="gtop"><div style="font-size:24px">${G.ach[a.id]?'🏆':'🔒'}</div><div><div class="nm">${a.n}</div><div class="small">${a.d}</div></div></div></div>`).join('')+'</div>');
   m.querySelector('#cls').onclick=()=>m.remove();
+};
+$('#bMore').onclick=()=>{
+  const m=modal(`<button style="float:right" id="cls">Cerrar</button><h3>Más</h3>
+   <div class="row"><button id="mrAch">Logros</button><button id="mrHelp">Ayuda</button><button id="mrMute">${sfx.muted?'🔇 Activar sonido':'🔊 Silenciar'}</button></div>`);
+  m.querySelector('#cls').onclick=()=>m.remove();
+  m.querySelector('#mrAch').onclick=()=>{m.remove();$('#bAch').click()};
+  m.querySelector('#mrHelp').onclick=()=>{m.remove();$('#bHelp').click()};
+  m.querySelector('#mrMute').onclick=()=>{$('#bMute').click();m.remove()};
 };
 const bMute=$('#bMute');
 bMute.textContent=sfx.muted?'🔇':'🔊';

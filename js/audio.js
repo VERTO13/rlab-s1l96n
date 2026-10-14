@@ -3,6 +3,7 @@
 const sfx=(()=>{
   let ac=null,muted=false;
   try{muted=localStorage.getItem('reactorIdleMuted')==='1'}catch(e){}
+  const vib=ms=>{if(!muted)try{navigator.vibrate&&navigator.vibrate(ms)}catch(e){}};
   const ctx=()=>{
     if(!ac){try{ac=new (window.AudioContext||window.webkitAudioContext)()}catch(e){return null}}
     if(ac.state==='suspended')ac.resume();
@@ -23,10 +24,10 @@ const sfx=(()=>{
     f.type='lowpass';f.frequency.value=900;g.gain.value=vol;s.buffer=b;s.connect(f).connect(g).connect(a.destination);s.start();
   };
   return {
-    build(){tone(520,780,.07,'square',.04)},
-    sell(){tone(700,380,.09,'triangle',.06)},
+    build(){tone(520,780,.07,'square',.04);vib(8)},
+    sell(){tone(700,380,.09,'triangle',.06);vib(14)},
     cash(){tone(880,1320,.1,'triangle',.06)},
-    boom(){noise(.5,.22);tone(160,40,.5,'sawtooth',.07)},
+    boom(){noise(.5,.22);tone(160,40,.5,'sawtooth',.07);vib([40,30,60])},
     research(){tone(520,520,.08,'sine',.06);tone(780,780,.12,'sine',.06,.09)},
     ach(){[660,880,1320].forEach((f,i)=>tone(f,f,.16,'sine',.06,i*.1))},
     warn(){tone(300,300,.1,'square',.04);tone(300,300,.1,'square',.04,.16)},

@@ -132,14 +132,56 @@ body{padding-top:env(safe-area-inset-top)}
 .tpl{display:flex;gap:4px;align-items:center;margin:3px 0}
 .tpl span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #touchbar{display:none}
+#mbar{display:none}
 @media (max-width:760px){
-  .left{width:100%}
+  :root{--nav:54px;--mbar:60px}
+  html,body{overscroll-behavior:none}
+  body{font-size:13px;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+  #app{padding:6px 6px calc(var(--nav) + var(--mbar) + 24px + env(safe-area-inset-bottom))}
+  /* navegación inferior */
+  #menu{position:fixed;left:0;right:0;bottom:0;z-index:15;margin:0;padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:#0c0c18;border:0;border-top:1px solid var(--line);flex-wrap:nowrap;gap:4px;overflow-x:auto}
+  #menu button{flex:1 0 auto;min-height:42px;padding:4px 8px;font-size:12px}
+  #bAch,#bHelp,#bMute{display:none}
+  #bMore{display:inline-block !important}
+  button{min-height:38px}
+  button.sm{min-height:32px}
+  /* disposición: recursos arriba, mapa, barra de acciones */
+  .cols{flex-direction:column;gap:6px}
+  .left{display:contents;width:100%}
   .right{order:-1;min-width:0;width:100%}
-  #toolbox{position:fixed;left:0;right:0;bottom:0;z-index:12;margin:0;max-height:36vh;overflow:auto;border-radius:12px 12px 0 0;box-shadow:0 -6px 20px #000a;padding-bottom:calc(8px + env(safe-area-inset-bottom))}
-  #app{padding-bottom:40vh}
-  #touchbar{display:flex}
-  body{font-size:13px}
-  .comp{width:42px;height:42px}.comp img{width:34px;height:34px}
+  #overview{order:-2;position:sticky;top:0;z-index:11;display:flex;flex-wrap:wrap;gap:2px 12px;align-items:center;padding:6px 8px;margin:0 0 6px;background:#12121ff2;backdrop-filter:blur(4px)}
+  #overview .res{margin:0;font-size:12px}
+  #overview .res b{font-size:15px}
+  #overview>.small{display:none}
+  #overview .bar{flex-basis:100%;height:4px;margin:2px 0}
+  #overview #bSell{flex:1 1 100%;min-height:36px}
+  #selBox{order:3}
+  .toolbar{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
+  .toolbar button{flex:none}
+  #bNums,#bDemoTb{display:none !important}
+  #tut{padding:6px 8px}
+  #tut button{display:none}
+  /* barra de acciones sobre la navegación */
+  #mbar{display:flex;position:fixed;left:0;right:0;bottom:calc(var(--nav) + env(safe-area-inset-bottom));z-index:14;gap:4px;padding:5px 6px;background:#10101cf5;border-top:1px solid var(--line)}
+  #mbar button{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;min-height:50px;font-size:18px;line-height:1.1}
+  #mbar button small{font-size:10px;color:var(--mute)}
+  #mbar button.on{border-color:var(--money);background:#2a2610}
+  #mbar button.on small{color:var(--money)}
+  #mbIcon img{display:block}
+  /* selector de piezas como cajón */
+  #toolbox{display:none}
+  body.sheet-open #toolbox{display:block;position:fixed;left:0;right:0;bottom:calc(var(--nav) + var(--mbar) + env(safe-area-inset-bottom));max-height:56vh;overflow:auto;z-index:13;margin:0;border-radius:14px 14px 0 0;box-shadow:0 -8px 24px #000c}
+  .comp{width:48px;height:56px}.comp img{width:36px;height:36px}
+  .comp small{font-size:10px}
+  #toolbox .row button{min-height:38px}
+  /* información al tocar: aparece sobre la barra de acciones */
+  #tip{left:8px !important;right:8px;top:auto !important;bottom:calc(var(--nav) + var(--mbar) + 12px + env(safe-area-inset-bottom));max-width:none !important;width:auto;z-index:20}
+  .zoomctl{top:auto;bottom:8px;left:8px}
+  .zoomctl button{min-height:34px;padding:2px 12px}
+  #legend{display:none !important}
+  .grid{grid-template-columns:1fr}
+  .modal>div{padding:12px}
+  #toasts{bottom:calc(var(--nav) + var(--mbar) + 12px + env(safe-area-inset-bottom));left:8px;right:8px}
 }
 </style>
 </head>
@@ -155,6 +197,7 @@ body{padding-top:env(safe-area-inset-top)}
     <button id="bHelp">Ayuda</button>
     <button id="bMute" title="Sonido">🔊</button>
     <button id="bCloud" title="Nube" data-st="off">☁</button>
+    <button id="bMore" style="display:none" title="Más">⋯</button>
   </div>
   <div id="view"></div>
 </div>

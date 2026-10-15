@@ -3,13 +3,25 @@
    DATOS  (valores tomados del juego original)
    ============================================================ */
 const SUF=['','K','M','B','T','Qa','Qi','Sx','Sp','Oc','No','Dc','Ud','Dd','Td'];
+/* Formato de números (igual que el juego original hasta el millón):
+   menos de 10 → hasta 2 decimales · de 10 a 999 → 1 decimal · de 1 000 a 999 999 → entero con espacios · desde 1 millón → abreviatura (2.35 M, 1.2 B…) */
 function nf(v){
+  if(v==null||Number.isNaN(v))return '???';
   if(!isFinite(v))return '∞';
-  const neg=v<0;v=Math.abs(v);
-  // máximo 2 decimales (y menos cuanto más grande el número); lo que redondea a 0 se muestra como 0
-  if(v<1000)return (neg?'-':'')+(v<100?String(+v.toFixed(2)):String(+v.toFixed(1)));
-  let i=0;while(v>=1000&&i<SUF.length-1){v/=1000;i++}
-  return (neg?'-':'')+(+v.toFixed(2))+' '+SUF[i];
+  const neg=v<0;let a=Math.abs(v),out;
+  if(a<10)out=String(Math.round(a*100)/100);
+  else if(a<1000)out=String(Math.round(a*10)/10);
+  else{
+    const r=Math.round(a);
+    if(r<1e6)out=String(r).replace(/\B(?=(\d{3})+(?!\d))/g,'\u00A0');   // separador de miles (espacio que no se parte)
+    else{
+      let i=0,x=a;while(x>=1000&&i<SUF.length-1){x/=1000;i++}
+      let m=Math.round(x*100)/100;
+      if(m>=1000&&i<SUF.length-1){m=Math.round(m/10)/100;i++}
+      out=m+'\u00A0'+SUF[i];
+    }
+  }
+  return (neg?'-':'')+out;
 }
 const TERR={' ':'grass',s:'sand',w:'water','.':'mountain'};
 const PAT_S={1:[[-1,0],[0,-1],[1,0],[0,1]]};

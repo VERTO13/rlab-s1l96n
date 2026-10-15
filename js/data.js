@@ -92,6 +92,9 @@ U('officeSellPower','Venta de oficinas','1',1e3,10,'office','powerSellAmount',{c
 U('bankEffectiveness','Efectividad del banco','1',1e13,4,'bank2','powerToMoneyAmountBonusMultiplayer',{cid:'bank'},1.25);
 U('researchCenterAmount','Centros de investigación','1',25e3,1.78,'researchCenter','researchPointsProduction',{ctype:'researchCenter'},1.25);
 U('boilerHouseSellAmount','Venta de la caldera','1',5e7,2.8,'boilerHouse','heatSellAmount',{cid:'boilerHouse'},1.4);
+/* --- Extra (no existe en el original): recuperar más valor al vender --- */
+U('cellRecycling','Reciclaje de celdas','1',5e3,4,'solarCell','refundCells',{cat:'cell'},.05,{sell:1,method:'sum',max:8,abs:true});
+U('coolBeforeSale','Enfriado previo a la venta','1',1e4,3.5,'solarCell','refundHeat',{cat:'heat'},.2,{sell:1,method:'sum',max:5,abs:true});
 U('generatorMaxHeat','Calor máx. de generadores','d',1e3,3.7,'solarCell','maxHeatMultiplayer',{ctype:'generator'},2);
 U('generatorConvertPower','Eficiencia de generadores','d',400,1.5,'solarCell','heatToPower',{ctype:'generator'},1.25);
 U('heatExchangerMaxHeat','Calor máx. de intercambiadores','d',2e6,2.6,'heatExchanger','maxHeatMultiplayer',{cid:'heatExchanger'},2);
@@ -123,7 +126,16 @@ const UPFIELD={powerProduction:'powerProductionMultiplayer',heatProduction:'heat
  maxHeatMultiplayer:'maxHeatMultiplayer',powerToMoneyAmountBonusMultiplayer:'powerToMoneyAmountBonusMultiplayer',heatSellAmount:'bulkHeatSellMultiplayer',
  researchPointsProduction:'researchPointsProductionMultiplayer',powerSellAmount:'powerSellAmountMultiplayer',heatToPower:'heatToPowerConversionMultiplayer',
  maxPower:'maxPowerMultiplayer',isolationEffectiveness:'isolationMultiplayer',waterProduction:'waterProductionMultiplayer',maxWater:'maxWaterMultiplayer',
- circulatorEffectiveness:'circulatorMaxPowerMultiplayer',heatInletMaxTransferMultiplayer:'heatInletMaxTransferMultiplayer'};
+ circulatorEffectiveness:'circulatorMaxPowerMultiplayer',heatInletMaxTransferMultiplayer:'heatInletMaxTransferMultiplayer',
+ refundCells:'refundBonus',refundHeat:'heatRefundMitigation'};
+/* piezas afectadas por una mejora (una pieza, un tipo o una categoría) */
+function upTargets(u){
+  const t=u.target;
+  if(t.cid)return [CBY[t.cid]];
+  if(t.cat==='cell')return COMPS.filter(c=>c.st.type==='Cell');
+  if(t.cat==='heat')return COMPS.filter(c=>c.maxHeat);
+  return CTYPE[t.ctype]||[];
+}
 const pct=m=>Math.round(100*(m-1));
 const UPTXT={powerProduction:b=>`Aumenta la producción de energía un ${pct(b.mult)}%`,heatProduction:b=>`Aumenta la producción de calor un ${pct(b.mult)}%`,
  lifetime:b=>`Aumenta la vida útil un ${pct(b.mult)}%`,maxHeatMultiplayer:b=>`Aumenta el calor máximo un ${pct(b.mult)}%`,
@@ -132,7 +144,9 @@ const UPTXT={powerProduction:b=>`Aumenta la producción de energía un ${pct(b.m
  heatToPower:b=>`Aumenta la conversión calor→energía un ${pct(b.mult)}%`,maxPower:b=>`Aumenta la energía máx. del reactor un ${pct(b.mult)}%`,
  isolationEffectiveness:b=>`Aumenta la efectividad del aislamiento un ${pct(b.mult+1)}%`,waterProduction:b=>`Aumenta la producción de agua un ${pct(b.mult)}%`,
  maxWater:b=>`Aumenta el agua máxima un ${pct(b.mult)}%`,circulatorEffectiveness:b=>`Aumenta la efectividad del circulador un ${pct(b.mult+1)}%`,
- heatInletMaxTransferMultiplayer:b=>`Aumenta la transferencia máx. de la entrada un ${pct(b.mult)}%`};
+ heatInletMaxTransferMultiplayer:b=>`Aumenta la transferencia máx. de la entrada un ${pct(b.mult)}%`,
+ refundCells:b=>`Las celdas devuelven un ${Math.round(b.mult*100)}% más de su precio al venderlas (proporcional a la vida útil que les queda)`,
+ refundHeat:b=>`Se pierde un ${Math.round(b.mult*100)}% menos de reembolso por el calor que lleva una pieza al venderla`};
 
 /* ---- Investigación ---- */
 const RES=[];

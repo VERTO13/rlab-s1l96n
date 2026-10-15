@@ -37,11 +37,11 @@ function computeUB(R){
   const ub={};
   for(const c of COMPS)ub[c.id]={powerProductionMultiplayer:1,heatProductionMultiplayer:1,waterProductionMultiplayer:1,lifetimeMultiplayer:1,maxHeatMultiplayer:1,maxWaterMultiplayer:1,
    powerToMoneyAmountBonusMultiplayer:1,bulkHeatSellMultiplayer:1,researchPointsProductionMultiplayer:1,powerSellAmountMultiplayer:1,heatToPowerConversionMultiplayer:1,
-   maxPowerMultiplayer:1,isolationMultiplayer:1,heatInletMaxTransferMultiplayer:1,circulatorMaxPowerMultiplayer:1};
+   maxPowerMultiplayer:1,isolationMultiplayer:1,heatInletMaxTransferMultiplayer:1,circulatorMaxPowerMultiplayer:1,refundBonus:0,heatRefundMitigation:0};
   for(const id in R.ups){
     const u=UPBY[id];if(!u)continue;
     const f=UPFIELD[u.bonus.type];
-    const targets=u.target.cid?[CBY[u.target.cid]]:(CTYPE[u.target.ctype]||[]);
+    const targets=upTargets(u);
     for(let i=0;i<R.ups[id];i++)for(const c of targets){
       if(u.method==='sum')ub[c.id][f]+=u.bonus.mult;else ub[c.id][f]*=u.bonus.mult;
     }
@@ -124,11 +124,22 @@ function build(R,t,c){
   t.born=performance.now();hooks.onBuild(R,t);
   recordChange(R,t,b,mb);
 }
+/* Reembolso al vender:
+   - Piezas normales: 100 % del precio, menos la fracción de calor que llevan (como en el original).
+   - Celdas: 0 % en el original; con «Reciclaje» devuelven un % del precio proporcional a la vida útil restante.
+   - «Enfriado previo» reduce la pérdida por calor. */
 function sellPrice(R,t){
-  if(!t.c.refund||isFree(R))return 0;
-  const p=t.c.price*t.c.refund;let f=1;
-  if(t.c.maxHeat)f=1-t.heat/maxHeat(R,t);
-  return p*f;
+  if(isFree(R))return 0;
+  const c=t.c,u=UB(R,c);
+  if(c.st.type==='Cell'){
+    const rate=Math.min(1,(c.refund||0)+u.refundBonus);
+    const ml=maxLife(R,t);
+    return rate>0&&ml>0?c.price*rate*Math.max(0,t.life)/ml:0;
+  }
+  if(!c.refund)return 0;
+  let p=c.price*c.refund;
+  if(c.maxHeat){const frac=Math.min(1,t.heat/maxHeat(R,t));p*=1-frac*(1-Math.min(1,u.heatRefundMitigation))}
+  return p;
 }
 function sell(R,t){
   if(!t.c)return;

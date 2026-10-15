@@ -1035,19 +1035,22 @@ const UPSTAT={
  waterProduction:{v:(c,u)=>c.st.waterProduction*u.waterProductionMultiplayer,s:' agua/tick'},
  maxWater:{v:(c,u)=>c.maxWater*u.maxWaterMultiplayer,s:' agua máx.'},
  circulatorEffectiveness:{v:(c,u)=>c.st.maxWaterBonus*u.circulatorMaxPowerMultiplayer*100,s:'% de agua máx.'},
- heatInletMaxTransferMultiplayer:{v:(c,u)=>c.st.transferHeat*u.heatInletMaxTransferMultiplayer,s:' calor/tick'}
+ heatInletMaxTransferMultiplayer:{v:(c,u)=>c.st.transferHeat*u.heatInletMaxTransferMultiplayer,s:' calor/tick'},
+ refundCells:{v:(c,u)=>c.price*Math.min(1,u.refundBonus),pre:'$',s:' de reembolso por una celda nueva'},
+ refundHeat:{v:(c,u)=>c.price*c.refund*(1-.5*(1-Math.min(1,u.heatRefundMitigation))),pre:'$',s:' de reembolso si la pieza lleva 50% de calor'}
 };
 function upPreview(R,u){
   const cur=upLevel(R,u);
   const A={ups:Object.assign({},R.ups)},B={ups:Object.assign({},R.ups,{[u.id]:cur+1})};
   computeUB(A);computeUB(B);
   const d=UPSTAT[u.bonus.type];
-  const targets=(u.target.cid?[CBY[u.target.cid]]:CTYPE[u.target.ctype]).filter(c=>compAvailable(R,c));
+  const targets=upTargets(u).filter(c=>compAvailable(R,c));
   return targets.map(c=>({c,a:d.v(c,A.ub[c.id]),b:d.v(c,B.ub[c.id]),d})).filter(r=>isFinite(r.a)&&isFinite(r.b)); // sin las piezas que no tienen esa característica
 }
 const fmtTotal=f=>f>=10?'×'+nf(f):'+'+nf(Math.round((f-1)*1000)/10)+'%';
+const fmtAbs=f=>Math.round(f*100)+'%';
 function upTotals(R,u){
-  const cur=upLevel(R,u),first=u.target.cid?CBY[u.target.cid]:CTYPE[u.target.ctype][0];
+  const cur=upLevel(R,u),first=upTargets(u)[0];
   const A={ups:Object.assign({},R.ups)},B={ups:Object.assign({},R.ups,{[u.id]:cur+1})};
   computeUB(A);computeUB(B);
   const f=UPFIELD[u.bonus.type];
@@ -1055,7 +1058,8 @@ function upTotals(R,u){
 }
 function upTipHtml(R,u){
   const lv=upLevel(R,u),t=upTotals(R,u),rows=upPreview(R,u).slice(0,12);
-  let h=`<b>${u.name}</b><br><span class="d">Nivel ${lv} → ${lv+1} · efecto total ${fmtTotal(t.a)} → </span><b class="good">${fmtTotal(t.b)}</b>`;
+  const FT=u.abs?fmtAbs:fmtTotal;
+  let h=`<b>${u.name}</b><br><span class="d">Nivel ${lv}${u.max?'/'+u.max:''} → ${lv+1} · ${u.abs?'valor':'efecto total'} ${FT(t.a)} → </span><b class="good">${FT(t.b)}</b>`;
   if(rows.length){
     const pre=rows[0].d.pre||'';
     h+=`<table class="pt"><tr><th>Pieza</th><th>Ahora</th><th>Con la mejora</th></tr>`+rows.map(r=>{
@@ -1087,13 +1091,13 @@ function fillUpList(){
   let h='',lastG=null;const grouped=gsel==='all'&&uiPrefs.upSort==='orig';
   for(const u of list){
     if(grouped&&lastG!==u.group)h+=`<div class="gh">${UP_GROUPS[u.group]||''}</div>`;lastG=u.group;
-    const lv=upLevel(R,u),p=upPrice(R,u),ok=aff(u);
-    const tc=u.target.cid?CBY[u.target.cid]:CTYPE[u.target.ctype][0];
+    const lv=upLevel(R,u),p=upPrice(R,u),maxed=!!(u.max&&lv>=u.max),ok=aff(u)&&!maxed;
+    const tc=upTargets(u)[0];
     h+=`<div class="gc ${ok?'ok':''}" data-uid="${u.id}"><div class="gtop">${iconImg(tc,34)}
-      <div><div class="nm">${u.name} <span class="small">nivel ${lv}</span></div><div class="small">${UPTXT[u.bonus.type](u.bonus)}</div></div></div>
-      <div class="gbot"><b class="money">${isFree(R)?'gratis':'$'+nf(p)}</b><span>
+      <div><div class="nm">${u.name} <span class="small">nivel ${lv}${u.max?'/'+u.max:''}</span></div><div class="small">${UPTXT[u.bonus.type](u.bonus)}</div></div></div>
+      <div class="gbot"><b class="money">${maxed?'<span class="small">Nivel máximo</span>':isFree(R)?'gratis':'$'+nf(p)}</b><span>
       ${(u.sell||isFree(R))&&lv>0?`<button class="sm" data-s="${u.id}" title="${isFree(R)?'Quitar un nivel':'Vender el último nivel'}">${isFree(R)?'−':`Vender +$${nf(.8*upPrice(R,u,true))}`}</button> `:''}
-      <button data-u="${u.id}" class="${ok?'':'cant'}">Comprar</button></span></div></div>`;
+      ${maxed?'':`<button data-u="${u.id}" class="${ok?'':'cant'}">Comprar</button>`}</span></div></div>`;
   }
   if(!list.length)h='<div class="small" style="grid-column:1/-1;padding:14px">Nada coincide con el filtro.</div>';
   $('#glist').innerHTML=h;
@@ -1104,7 +1108,7 @@ function fillUpList(){
     el.onmouseleave=()=>showInfoText('');
   });
   document.querySelectorAll('#glist [data-u]').forEach(b=>b.onclick=()=>{
-    const u=UPBY[b.dataset.u],p=upPrice(R,u);if(!isFree(R)&&!afford(G.money,p))return;
+    const u=UPBY[b.dataset.u],p=upPrice(R,u);if(u.max&&upLevel(R,u)>=u.max)return;if(!isFree(R)&&!afford(G.money,p))return;
     const go=()=>{if(!isFree(R))addMoney(-p,false);R.ups[u.id]=upLevel(R,u)+1;R.ubDirty=true;sfx.research();showInfoText('');fillUpList()};
     if(u.warn&&upLevel(R,u)===0&&!isFree(R)){if(confirm(u.warn))go()}else go()});
   document.querySelectorAll('#glist [data-s]').forEach(b=>b.onclick=()=>{

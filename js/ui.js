@@ -582,8 +582,8 @@ function bump(sel){const e=$(sel);if(!e)return;e.classList.remove('bump');void e
 function animateNumbers(now){
   if(view!=='game'||!$('#vMoney'))return;
   const R=curR();
-  // solo se anima cuando el salto es grande; los cambios pequeños (decimales) se muestran directos para no parpadear
-  const lerp=(k,v)=>{const d=v-disp[k];disp[k]=(Math.abs(d)<1||Math.abs(d)<=Math.abs(v)*1e-3)?v:disp[k]+d*.25};
+  // los números se muestran siempre con su valor real e inmediato (sin efecto de conteo)
+  const lerp=(k,v)=>{disp[k]=v};
   lerp('money',G.money);lerp('rp',G.rp);lerp('power',R.power);
   const set=(id,t)=>{const e=$(id);if(e&&e.textContent!==t)e.textContent=t};
   set('#vMoney',nf(disp.money));set('#vRp',nf(disp.rp));set('#vPow',nf(disp.power));

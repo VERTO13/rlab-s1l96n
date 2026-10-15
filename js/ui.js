@@ -45,6 +45,9 @@ function applyDisclosure(R){
   const heat=heatUnlocked(R),adv=advTools(R);
   ['#bHeatView','#bNums','#bSlow','#bDemoTb','#chip'].forEach(x=>vis(x,heat));
   ['#mSel','#mPaint','#bUndo','#bRedo'].forEach(x=>vis(x,adv));
+  const hasTerra=!isFree(R)&&R.tiles.some(t=>t.orig==='water'||t.orig==='mountain');
+  ['#mTerr','#mbTerr'].forEach(x=>vis(x,adv&&hasTerra));
+  if(mode==='terrain'&&!(adv&&hasTerra))mode='build';
   vis('#bRestore',adv||R.tiles.some(t=>t.c&&t.c.lifetime>0&&t.life<=0));
   const lg=$('#legend');if(lg)lg.style.display=(heat&&showHeatView)?'flex':'none';
   if(heat&&!G.unl.heat){G.unl.heat=1;if(!uiPrefs.advanced)toast('🔓 <b>Calor desbloqueado</b><br><span class="small">Vista de calor, cámara lenta y calculadora ya están en la barra del mapa.</span>')}
@@ -59,7 +62,7 @@ function getSave(){
   const d={v:2,money:G.money,totalMoney:G.totalMoney,totalTicks:G.totalTicks,rp:G.rp,research:G.research,bonusTicks:G.bonusTicks,savedAt:Date.now(),cur:curReactor,
     ach:G.ach,stats:G.stats,tut:G.tut,tutHidden:G.tutHidden,unl:G.unl,ev:{next:G.ev.next,lastAdv:G.ev.lastAdv},reactors:{}};
   for(const id in G.reactors){const R=G.reactors[id];
-    d.reactors[id]={bought:R.bought,power:R.power,auto:R.auto,ups:R.ups,tiles:R.tiles.map(t=>t.c?[t.c.id,t.heat,t.water,t.life]:null)}}
+    d.reactors[id]={bought:R.bought,power:R.power,auto:R.auto,ups:R.ups,terra:R.tiles.reduce((a,t,i)=>{if(t.terrain!==t.orig)a.push(i);return a},[]),tiles:R.tiles.map(t=>t.c?[t.c.id,t.heat,t.water,t.life]:null)}}
   return d;
 }
 function saveGame(){try{localStorage.setItem(SAVEKEY,JSON.stringify(getSave()))}catch(e){}}
@@ -71,6 +74,8 @@ function loadSave(d,offline){
   G.stats=Object.assign({explosions:0,sold:0,built:0,sells:0,slow:0,hoverCell:0,placeInfo:0},d.stats||{});
   for(const id in G.reactors){const R=G.reactors[id],s=d.reactors[id];if(!s)continue;
     R.bought=!!s.bought;R.power=s.power||0;R.auto=s.auto!==false;R.ups=s.ups||{};R.ubDirty=true;
+    R.tiles.forEach(t=>{t.terrain=t.orig});
+    (s.terra||[]).forEach(i=>{const t=R.tiles[i];if(t&&(t.orig==='water'||t.orig==='mountain'))t.terrain='grass'});
     s.tiles.forEach((a,i)=>{const t=R.tiles[i];if(!t)return;if(a&&CBY[a[0]]){t.c=CBY[a[0]];t.heat=a[1]||0;t.water=a[2]||0;t.life=a[3]}else{t.c=null;t.heat=0;t.water=0;t.life=null}});
   }
   curReactor=(d.cur&&G.reactors[d.cur])?d.cur:null;   // por si el guardado menciona un reactor que ya no existe
@@ -112,6 +117,7 @@ const ACH=[
  {id:'rich',n:'Millonario',d:'Gana $1 M en total.',ok:()=>G.totalMoney>=1e6},
  {id:'nuclear',n:'Era atómica',d:'Investiga las celdas nucleares.',ok:()=>gres('nuclearCell')>=1},
  {id:'island2',n:'Expansión',d:'Compra tu segunda central.',ok:()=>realReactors().filter(R=>R.bought).length>=2},
+ {id:'terra',n:'Ingeniero civil',d:'Modifica 10 casillas de terreno (montañas o agua).',ok:()=>(G.stats.terra||0)>=10},
  {id:'planner',n:'Previsor',d:'Usa la calculadora previa 10 veces.',ok:()=>G.stats.placeInfo>=10}
 ];
 function checkAch(){
@@ -233,9 +239,10 @@ function renderGame(){
     <div class="box" id="toolbox">
       <h4>Construcción${isFree(R)?' · todo desbloqueado':''}</h4>
       <div class="row" style="margin-top:0">
-        <button id="mBuild">Construir</button><button id="mSell">Vender</button><button id="mSel">Seleccionar</button>
+        <button id="mBuild">Construir</button><button id="mSell">Vender</button><button id="mSel">Seleccionar</button><button id="mTerr" title="Despejar montañas y rellenar agua (tecla T)">⛏ Terreno</button>
         <button id="mPaint" title="Arrastra para repetir la acción (en móvil)">Pintar</button>
       </div>
+      <div id="terraBox" class="small" style="display:none;margin:0 0 6px"></div>
       <div id="palcats" class="fbar" style="margin:0 0 6px"></div><div id="palette"></div>
       <div class="row">
         <button id="bUndo" class="sm" title="Solo mientras no pase un tick (pausa el juego para tener más margen).">↶ Deshacer</button><button id="bRedo" class="sm" title="Solo mientras no pase un tick">↷ Rehacer</button>
@@ -277,12 +284,13 @@ function renderGame(){
     <button id="mbMove" data-m="pan"><span>✋</span><small>Mover</small></button>
     <button id="mbBuild" data-m="build"><span>🔨</span><small>Construir</small></button>
     <button id="mbSell" data-m="sell"><span>🗑</span><small>Vender</small></button>
+    <button id="mbTerr" data-m="terrain"><span>⛏</span><small>Terreno</small></button>
     <button id="mbPiece"><span id="mbIcon"></span><small id="mbName">Piezas</small></button>
   </div>`;
   cv=$('#cv');g2=cv.getContext('2d');paletteEl=$('#palette');
   setupCanvas(R);buildPalette();renderTut();updateButtons();refreshHud();renderSelBox();renderStepBox();
   $('#bSell').onclick=sellAllPower;
-  $('#mBuild').onclick=()=>setMode('build');$('#mSell').onclick=()=>setMode('sell');$('#mSel').onclick=()=>setMode('select');
+  $('#mBuild').onclick=()=>setMode('build');$('#mSell').onclick=()=>setMode('sell');$('#mSel').onclick=()=>setMode('select');$('#mTerr').onclick=()=>setMode('terrain');
   $('#mPaint').onclick=()=>{paint=!paint;updateButtons()};
   $('#bUndo').onclick=()=>{if(undoLast()){sfx.sell();refreshHud()}};$('#bRedo').onclick=()=>{if(redoLast()){sfx.build();refreshHud()}};
   $('#bRestore').onclick=doRestore;
@@ -309,15 +317,22 @@ function setupCanvas(R){
   const mw=$('#mapwrap');if(mw)mw.style.maxWidth=R.meta.w*46+'px'; // el marco se ajusta al mapa (sin franja negra)
   g2.setTransform(dpr,0,0,dpr,0,0);
 }
+function renderTerraBox(){
+  const el=$('#terraBox');if(!el)return;
+  if(mode!=='terrain'||view!=='game'){el.style.display='none';return}
+  const R=curR(),base=terraBase(R)*Math.pow(TERRA_GROW,terraCount(R)),done=terraCount(R);
+  el.style.display='';
+  el.innerHTML=`<b>⛏ Terreno</b> · toca una <b>montaña</b> para despejarla (<b class="money">$${nf(Math.round(base))}</b>) o el <b>agua</b> para rellenarla (<b class="money">$${nf(Math.round(base*TERRA_WATER))}</b>). Es permanente y cada casilla modificada encarece la siguiente un 6 %. Modificadas: <b>${done}</b>.`;
+}
 function setMode(m){mode=m;if(m!=='select')sel=null;updateButtons();renderSelBox()}
 function updateButtons(){
   if(view!=='game')return;
   const set=(id,on)=>{const e=$(id);if(e)e.classList.toggle('on',!!on)};
-  set('#mBuild',mode==='build');set('#mSell',mode==='sell');set('#mSel',mode==='select'||mode==='paste');set('#mPaint',paint);
+  set('#mBuild',mode==='build');set('#mSell',mode==='sell');set('#mTerr',mode==='terrain');renderTerraBox();set('#mSel',mode==='select'||mode==='paste');set('#mPaint',paint);
   set('#bHeatView',showHeatView);set('#bNums',showNums);set('#bSlow',stepMode);
   const p=$('#bPause');if(p)p.textContent=paused?'▶ Continuar':'⏸ Pausa';
   const mb=(id,on)=>{const e=$(id);if(e)e.classList.toggle('on',!!on)};
-  mb('#mbMove',mode==='pan');mb('#mbBuild',mode==='build'||mode==='paste');mb('#mbSell',mode==='sell');
+  mb('#mbMove',mode==='pan');mb('#mbBuild',mode==='build'||mode==='paste');mb('#mbSell',mode==='sell');mb('#mbTerr',mode==='terrain');
   updateMbPiece();
   applyDisclosure();
 }
@@ -437,6 +452,12 @@ function placementHtml(R,t,c){
 }
 function showTileInfo(R,t){
   previewOk=null;
+  if(t.terrain!=='grass'&&mode==='terrain'){
+    const why=terraWhy(R,t);
+    if(why){showInfoText('<span class="bad">'+why+'</span>');return}
+    const c=terraCost(R,t),ok=afford(G.money,c);
+    showInfoText('<b>'+(t.terrain==='water'?'Rellenar agua':'Despejar montaña')+'</b> · <b class="money">$'+nf(c)+'</b>'+(ok?'':' <span class="bad">(te faltan $'+nf(Math.round(c-G.money))+')</span>'));return;
+  }
   if(t.terrain!=='grass'){showInfoText(t.terrain==='water'?'Agua':t.terrain==='mountain'?'Montaña: no se puede construir.':'No se puede construir aquí.');return}
   if(!t.c){
     // sin pieza elegida no hay nada que explicar: no se muestra nada
@@ -751,7 +772,7 @@ function drawMap(g,R,now,o){
     else if(t.c&&t.c.st.type==='HeatInlet')targets=R.tiles.filter(n=>n.c&&n.c.st.type==='HeatOutlet');
     g.lineWidth=2;
     for(const n of targets){g.strokeStyle='#40e0ff';g.strokeRect(n.x*TS+1,n.y*TS+1,TS-2,TS-2)}
-    const col=(!t.c&&o.selComp&&t.terrain==='grass'&&o.previewOk!==null)?(o.previewOk?'#6fe06f':'#ff5a4d'):'#fff';
+    const col=(o.terra&&t.terrain!=='grass')?(canTerraform(R,t)?'#6fe06f':'#ff5a4d'):(!t.c&&o.selComp&&t.terrain==='grass'&&o.previewOk!==null)?(o.previewOk?'#6fe06f':'#ff5a4d'):'#fff';
     g.strokeStyle=col;g.lineWidth=2.5;g.strokeRect(t.x*TS+1,t.y*TS+1,TS-2,TS-2);
     if(!t.c&&o.selComp&&t.terrain==='grass'){g.globalAlpha=.55;drawIcon(g,o.selComp,t.x*TS+TS/2,t.y*TS+TS/2,TS*.98);g.globalAlpha=1}
   }
@@ -767,7 +788,7 @@ function frame(now){
     const R=curR();
     if(!stepMode)getBase(R);
     stepCam();
-    drawMap(g2,R,now,{heat:showHeatView,nums:showNums,anim:true,hover,selComp:mode==='build'?selComp:null,sel,paste:mode==='paste'?clip:null,verdict:R.verdict,previewOk});
+    drawMap(g2,R,now,{heat:showHeatView,nums:showNums,anim:true,hover,terra:mode==='terrain',selComp:mode==='build'?selComp:null,sel,paste:mode==='paste'?clip:null,verdict:R.verdict,previewOk});
     updateFx(g2,R,now,dt);
     if(now<fx.shake)cv.style.transform=`translate(${rnd(-3,3).toFixed(1)}px,${rnd(-3,3).toFixed(1)}px)`;
     else if(cv.style.transform)cv.style.transform='';
@@ -820,6 +841,7 @@ function bindMobileBar(R){
   q('#mbMove').onclick=()=>setMode('pan');
   q('#mbBuild').onclick=()=>{setMode('build');if(!selComp)document.body.classList.add('sheet-open')};
   q('#mbSell').onclick=()=>setMode('sell');
+  q('#mbTerr').onclick=()=>setMode('terrain');
   q('#mbPiece').onclick=()=>document.body.classList.toggle('sheet-open');
   updateMbPiece();
   if(!isMobile())return;
@@ -859,6 +881,12 @@ function applyAction(R,t,act,ctrl,drag){
     if(!t.c)return;
     if(ctrl&&!drag)sellMany(R,t);else sell(R,t);
     sfx.sell();
+  }else if(act==='terrain'){
+    if(t.terrain==='grass'){return}
+    const why=terraWhy(R,t),cost=terraCost(R,t);
+    if(why){logMsg(why);return}
+    if(!afford(G.money,cost)){logMsg('Te faltan $'+nf(Math.round(cost-G.money))+' para '+(t.terrain==='water'?'rellenar esta agua':'despejar esta montaña')+'.');return}
+    if(terraform(R,t)){sfx.build();renderTerraBox();checkAch()}
   }else if(act==='build'){
     if(!selComp)return;
     let ok=false;
@@ -904,7 +932,7 @@ function bindCanvas(R){
     }
     const t=evtTile(e);hover=t;if(!t){showInfoText('');return}
     if(ptr&&ptr.act==='select'&&sel){sel.x1=t.x;sel.y1=t.y;return}
-    if(ptr&&ptr.paint&&t!==lastTile&&(ptr.act==='sell'||ptr.act==='build')){lastTile=t;applyAction(R,t,ptr.act,false,true);refreshHud()}
+    if(ptr&&ptr.paint&&t!==lastTile&&(ptr.act==='sell'||ptr.act==='build'||ptr.act==='terrain')){lastTile=t;applyAction(R,t,ptr.act,false,true);refreshHud()}
     if(!mouseDownNow||!ptr)showTileInfo(R,t);
   });
   const up=e=>{
@@ -932,6 +960,7 @@ window.addEventListener('keydown',e=>{
   else if(!ctrl&&k==='b')setMode('build');
   else if(!ctrl&&k==='x')setMode('sell');
   else if(!ctrl&&k==='s')setMode('select');
+  else if(!ctrl&&k==='t'&&$('#mTerr')&&$('#mTerr').style.display!=='none')setMode('terrain');
   else if(k==='escape'){sel=null;if(mode==='paste'||mode==='select')setMode('build');else renderSelBox()}
 });
 
@@ -1147,6 +1176,7 @@ $('#bHelp').onclick=()=>{
   <p>La <b>Vista de calor</b> muestra el relleno de calor y las flechas por donde viaja. El botón <b>Calculadora</b> (✓ Estable / ⚠) simula los próximos ${HORIZON} ticks y avisa de lo que explotaría; con una pieza elegida, el cuadro que aparece junto al mouse te dice si aguantaría en esa casilla.</p>
   <div class="row"><button id="bDemo2">Ver demostración animada del calor</button></div>
   <p>Tiempo sin jugar: se acumulan <b>ticks extra</b> que puedes gastar con el botón Rápido.</p>
+  <p><b>Terreno:</b> con el botón ⛏ <b>Terreno</b> (tecla T) puedes despejar montañas o rellenar agua para convertirlas en pasto y construir ahí. Es permanente, cada casilla modificada encarece la siguiente un 6 %, y no puedes tapar el agua que una bomba necesita.</p>
   <p><b>Eventos aleatorios:</b> cada 4–8 minutos puede pasar algo: un bono (favorable), una decisión que tú aceptas o rechazas, o un contratiempo (te avisa 10 s antes). Los premios y castigos son proporcionales a tu producción y ninguno destruye piezas. Puedes quitar los adversos o todos en Ajustes.</p>`);
   m.querySelector('#cls').onclick=()=>m.remove();
   m.querySelector('#bDemo2').onclick=()=>{m.remove();openDemo()};

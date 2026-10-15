@@ -15,7 +15,8 @@ function makeReactor(meta){
     ctx:null,stepIdx:0,dry:null,maxRatio:0,hotCount:0};
   for(let y=0;y<meta.h;y++)for(let x=0;x<meta.w;x++){
     const ch=meta.layout[y*meta.w+x];
-    R.tiles.push({x,y,terrain:TERR[ch]||'water',c:null,heat:0,water:0,wc:0,life:null,b:null,inHeat:0,dump:null,delta:0,heatOut:0});
+    const tr=TERR[ch]||'water';
+    R.tiles.push({x,y,terrain:tr,orig:tr,c:null,heat:0,water:0,wc:0,life:null,b:null,inHeat:0,dump:null,delta:0,heatOut:0});
   }
   return R;
 }
@@ -89,8 +90,8 @@ function endGroup(){
   if(hist.group&&hist.group.length&&histValid(hist.group)){hist.undo.push(hist.group);if(hist.undo.length>200)hist.undo.shift();hist.redo.length=0}
   hist.group=null;
 }
-const snapT=t=>({c:t.c,heat:t.heat,water:t.water,life:t.life});
-function applySnap(t,s){t.c=s.c;t.heat=s.heat;t.water=s.water;t.life=s.life;t.wc=0;t.dump=null}
+const snapT=t=>({c:t.c,heat:t.heat,water:t.water,life:t.life,terrain:t.terrain});
+function applySnap(t,s){if(s.terrain)t.terrain=s.terrain;t.c=s.c;t.heat=s.heat;t.water=s.water;t.life=s.life;t.wc=0;t.dump=null}
 function recordChange(R,t,before,mb){
   if(!hist.group)return;
   hist.group.push({rid:R.meta.id,i:t.y*R.meta.w+t.x,before,after:snapT(t),dm:G.money-mb,tick:G.totalTicks});
@@ -106,6 +107,37 @@ function redoLast(){
   const g=hist.redo.pop();if(!g)return false;
   for(const e of g){const R=G.reactors[e.rid];applySnap(R.tiles[e.i],e.after);if(e.dm)addMoney(e.dm,false)}
   hist.undo.push(g);return true;
+}
+
+/* ---- terraformación: despejar montañas y rellenar agua (idea propia, no existe en el juego original) ----
+   El costo sube ×1,06 con cada casilla ya modificada en ese reactor, así que no se puede convertir todo el mapa en pasto por poco dinero.
+   Es permanente (solo se puede deshacer en el mismo tick, como el resto de acciones). */
+const TERRA_GROW=1.06,TERRA_WATER=2.5;
+const terraBase=R=>Math.max(40,R.meta.price*.01);
+const terraCount=R=>{let n=0;for(const t of R.tiles)if(t.terrain!==t.orig)n++;return n};
+function terraCost(R,t){
+  if(isFree(R))return 0;
+  return Math.round(terraBase(R)*(t.terrain==='water'?TERRA_WATER:1)*Math.pow(TERRA_GROW,terraCount(R)));
+}
+/* devuelve null si se puede, o el motivo */
+function terraWhy(R,t){
+  if(isFree(R))return 'La central de demostración no se puede modificar.';
+  if(t.terrain!=='water'&&t.terrain!=='mountain')return 'Ya es terreno firme.';
+  if(t.terrain==='water'){
+    for(const n of near(R,t,N4)){
+      if(n.c&&n.c.onlyNextToWater&&!near(R,n,N4).some(q=>q!==t&&q.terrain==='water'))return 'La bomba de ('+(n.x+1)+','+(n.y+1)+') necesita esta agua.';
+    }
+  }
+  return null;
+}
+const canTerraform=(R,t)=>!terraWhy(R,t)&&afford(G.money,terraCost(R,t));
+function terraform(R,t){
+  if(!canTerraform(R,t))return false;
+  const b=snapT(t),mb=G.money;
+  addMoney(-terraCost(R,t));
+  t.terrain='grass';G.stats.terra=(G.stats.terra||0)+1;
+  hooks.onBuild(R,t);recordChange(R,t,b,mb);
+  return true;
 }
 
 /* ---- acciones de compra ---- */

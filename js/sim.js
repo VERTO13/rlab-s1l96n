@@ -5,7 +5,10 @@
    ============================================================ */
 const hooks={log(){},onTick(){},onBoom(){},onBuild(){},onSell(){}};
 
-const G={money:1,totalMoney:0,totalTicks:0,rp:0,research:{},bonusTicks:0,reactors:{},ach:{},stats:{explosions:0,sold:0,built:0}};
+/* modificadores temporales que aplican los eventos (events.js). Valores neutros = juego normal */
+const EVX={sell:1,conv:1,water:1,price:1,cellPower:1,cellHeat:1,wear:1,noFast:false,upId:null,upMult:1};
+const priceOf=c=>c.price*EVX.price;
+const G={earned:0,emaInc:0,emaRp:0,emaN:0,money:1,totalMoney:0,totalTicks:0,rp:0,research:{},bonusTicks:0,reactors:{},ach:{},stats:{explosions:0,sold:0,built:0}};
 
 function makeReactor(meta){
   const R={meta,power:0,bought:!!meta.sandbox,auto:true,ups:{},tiles:[],last:{},expl:[],ub:null,ubDirty:true,tileBonus:0,
@@ -59,9 +62,9 @@ function setComp(R,t,c){
   if(c&&c.lifetime)t.life=maxLife(R,t);
 }
 const getMaxPower=R=>R.meta.maxPower+R.tileBonus;
-function heatProdOf(R,t){return t.c.st.heatProduction*UB(R,t.c).heatProductionMultiplayer*(t.b?t.b.heatProductionBonus:1)}
-function powerProdOf(R,c){return c.st.powerProduction*UB(R,c).powerProductionMultiplayer}
-function convAmount(R,c){return c.st.convertHeatToPower*UB(R,c).heatToPowerConversionMultiplayer}
+function heatProdOf(R,t){return t.c.st.heatProduction*EVX.cellHeat*UB(R,t.c).heatProductionMultiplayer*(t.b?t.b.heatProductionBonus:1)}
+function powerProdOf(R,c){return c.st.powerProduction*EVX.cellPower*UB(R,c).powerProductionMultiplayer}
+function convAmount(R,c){return c.st.convertHeatToPower*EVX.conv*UB(R,c).heatToPowerConversionMultiplayer}
 function patternFor(c){
   const s=c.st,k=s.distributeSize||1;
   return s.distributeType==='diagonal'?PAT_D[k]:PAT_S[k];
@@ -112,14 +115,14 @@ function canBuild(R,t,c){
   const lim=R.meta.heatCellsAllowed;
   if(lim&&c.st.type==='Cell'){let n=0;R.tiles.forEach(q=>{if(q.c&&q.c.st.type==='Cell')n++});if(n>=lim)return false}
   if(R.meta.researchComponentsDisabled&&c.type==='researchCenter')return false;
-  return isFree(R)||afford(G.money,c.price);
+  return isFree(R)||afford(G.money,priceOf(c));
 }
 function canRestore(R,t,c){
-  return !!(t.c&&t.c.id===c.id&&maxLife(R,t)>0&&waterOk(R,t,c)&&(isFree(R)||afford(G.money,c.price)));
+  return !!(t.c&&t.c.id===c.id&&maxLife(R,t)>0&&waterOk(R,t,c)&&(isFree(R)||afford(G.money,priceOf(c))));
 }
 function build(R,t,c){
   const b=snapT(t),mb=G.money;
-  if(!isFree(R))addMoney(-c.price);
+  if(!isFree(R))addMoney(-priceOf(c));
   setComp(R,t,c);if(!isFree(R))G.stats.built++;
   t.born=performance.now();hooks.onBuild(R,t);
   recordChange(R,t,b,mb);
@@ -130,14 +133,14 @@ function build(R,t,c){
    - «Enfriado previo» reduce la pérdida por calor. */
 function sellPrice(R,t){
   if(isFree(R))return 0;
-  const c=t.c,u=UB(R,c);
+  const c=t.c,u=UB(R,c),pm=Math.min(1,EVX.price);   // los descuentos temporales también bajan lo que te devuelven (sin arbitraje)
   if(c.st.type==='Cell'){
     const rate=Math.min(1,(c.refund||0)+u.refundBonus);
     const ml=maxLife(R,t);
-    return rate>0&&ml>0?c.price*rate*Math.max(0,t.life)/ml:0;
+    return rate>0&&ml>0?c.price*pm*rate*Math.max(0,t.life)/ml:0;
   }
   if(!c.refund)return 0;
-  let p=c.price*c.refund;
+  let p=c.price*pm*c.refund;
   if(c.maxHeat){const frac=Math.min(1,t.heat/maxHeat(R,t));p*=1-frac*(1-Math.min(1,u.heatRefundMitigation))}
   return p;
 }
@@ -238,9 +241,9 @@ const PHASES=[
       case 'Cell':{
         if(t.life>0){
           if(s.powerProduction>0)e.powerMax+=powerProdOf(R,t.c);
-          t.life--;
+          t.life=Math.max(0,t.life-EVX.wear);
         }else if((isFree(R)||gres(t.c.id+'AutoRebuild'))&&R.auto&&canRestore(R,t,t.c)){
-          const b=snapT(t);if(!isFree(R))addMoney(-t.c.price);setComp(R,t,t.c);void b}
+          const b=snapT(t);if(!isFree(R))addMoney(-priceOf(t.c));setComp(R,t,t.c);void b}
         break}
       case 'PowerToMoneyConverter':
         e.maxPowerToMoney+=s.maxSellPower*UB(R,t.c).powerSellAmountMultiplayer*t.b.powerToMoneyMultiplayer;break;
@@ -248,9 +251,9 @@ const PHASES=[
         const i=Math.min(t.heat,convAmount(R,t.c));
         e.powerMax+=i;e.heatToPower+=i;t.heat-=i;t.heatOut=i;
         if(s.waterEffectiveness){
-          const a=Math.min(t.heat,t.water*s.waterEffectiveness);
+          const we=s.waterEffectiveness*EVX.water,a=Math.min(t.heat,t.water*we);
           e.powerMax+=a;e.heatToPower+=a;t.heat-=a;t.heatOut+=a;
-          t.wc=a/s.waterEffectiveness;t.water-=t.wc;
+          t.wc=a/we;t.water-=t.wc;
         }
         break}
       case 'MaxPowerIncrease':e.maxPowerBonus+=s.maxPowerIncrease*UB(R,t.c).maxPowerMultiplayer;break;
@@ -268,7 +271,7 @@ const PHASES=[
     const o=t.c.st.convertHeatToMoney*UB(R,t.c).bulkHeatSellMultiplayer;
     if(a<o)continue;
     const k=(a-o)/a;ns.forEach(n=>n.heat*=k);
-    e.money+=o;
+    e.money+=o*EVX.sell;
   }
   R.tileBonus=e.maxPowerBonus;
   let p=R.power+e.powerMax;
@@ -276,7 +279,7 @@ const PHASES=[
   p-=toMoney;
   if(p>getMaxPower(R))p=getMaxPower(R);
   R.power+=p-R.power;
-  e.money+=toMoney;
+  e.money+=toMoney*EVX.sell;
   if(!isFree(R)){addMoney(e.money);G.rp+=e.research}
   R.last={powerMax:e.powerMax,money:e.money,research:e.research,heatToPower:e.heatToPower};
  }},
@@ -328,14 +331,23 @@ function gameTick(){
     tickReactor(R);
   }
   G.totalTicks++;
+  trackIncome();
   pruneHistory();
+  if(typeof evTick==='function')evTick();
   hooks.onTick();
+}
+/* ingreso medio por tick (lo usan los eventos para que premios y castigos escalen con tu producción) */
+function trackIncome(){
+  let inc=0,rp=0;
+  for(const id in G.reactors){const R=G.reactors[id];if(R.meta.sandbox)continue;inc+=R.last.money||0;rp+=R.last.research||0}
+  G.earned+=inc;
+  if(G.emaN<1){G.emaInc=inc;G.emaRp=rp;G.emaN=1}else{G.emaInc+=(inc-G.emaInc)/60;G.emaRp+=(rp-G.emaRp)/60}
 }
 /* paso a paso (modo cámara lenta): ejecuta UNA fase de UN reactor */
 function stepPhase(R){
   const p=PHASES[R.stepIdx];p.run(R);
   R.stepIdx=(R.stepIdx+1)%PHASES.length;
-  if(R.stepIdx===0){G.totalTicks++;pruneHistory();hooks.onTick()}
+  if(R.stepIdx===0){G.totalTicks++;trackIncome();pruneHistory();if(typeof evTick==='function')evTick();hooks.onTick()}
   return p;
 }
 

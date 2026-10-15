@@ -22,9 +22,11 @@ mq.addEventListener('change',()=>{applyMobileClass();if(view==='game'&&curReacto
 
 /* ---- preferencias de interfaz y revelado progresivo ---- */
 const UIKEY='reactorIdleUI';
-const uiPrefs={advanced:false,resFilter:'pending',resGroup:'all',resQ:'',upFilter:'all',upGroup:'all',upQ:'',upSort:'orig',palCat:'all',upRows:false,zoomHint:false};
+const uiPrefs={advanced:false,resFilter:'pending',resGroup:'all',resQ:'',upFilter:'all',upGroup:'all',upQ:'',upSort:'orig',palCat:'all',upRows:false,zoomHint:false,events:'all'};
 try{Object.assign(uiPrefs,JSON.parse(localStorage.getItem(UIKEY)||'{}'))}catch(e){}
 const saveUI=()=>{try{localStorage.setItem(UIKEY,JSON.stringify(uiPrefs))}catch(e){}};
+EVCFG.mode=['all','fav','off'].includes(uiPrefs.events)?uiPrefs.events:'all';
+EVCFG.tps=()=>1000/tickInterval();
 // cada herramienta aparece cuando el jugador la necesita (o todo desde el inicio con el «modo avanzado»)
 const heatUnlocked=R=>uiPrefs.advanced||isFree(R)||gres('solarCell')>0||R.tiles.some(t=>t.c&&t.c.maxHeat);
 const advTools=R=>uiPrefs.advanced||isFree(R)||G.stats.built>=8;
@@ -55,7 +57,7 @@ function applyDisclosure(R){
 const SAVEKEY='reactorIdleClone1',TPLKEY='reactorIdleTemplates';
 function getSave(){
   const d={v:2,money:G.money,totalMoney:G.totalMoney,totalTicks:G.totalTicks,rp:G.rp,research:G.research,bonusTicks:G.bonusTicks,savedAt:Date.now(),cur:curReactor,
-    ach:G.ach,stats:G.stats,tut:G.tut,tutHidden:G.tutHidden,unl:G.unl,reactors:{}};
+    ach:G.ach,stats:G.stats,tut:G.tut,tutHidden:G.tutHidden,unl:G.unl,ev:{next:G.ev.next,lastAdv:G.ev.lastAdv},reactors:{}};
   for(const id in G.reactors){const R=G.reactors[id];
     d.reactors[id]={bought:R.bought,power:R.power,auto:R.auto,ups:R.ups,tiles:R.tiles.map(t=>t.c?[t.c.id,t.heat,t.water,t.life]:null)}}
   return d;
@@ -64,6 +66,7 @@ function saveGame(){try{localStorage.setItem(SAVEKEY,JSON.stringify(getSave()))}
 function loadSave(d,offline){
   if(!d||(d.v!==1&&d.v!==2))return false;
   G.money=d.money;G.totalMoney=d.totalMoney||0;G.totalTicks=d.totalTicks||0;G.rp=d.rp||0;G.research=d.research||{};G.bonusTicks=d.bonusTicks||0;
+  evReset(d.ev&&typeof d.ev.next==='number'?d.ev.next:null);G.ev.lastAdv=!!(d.ev&&d.ev.lastAdv);   // los eventos activos no se guardan
   G.ach=d.ach||{};G.tut=d.tut||0;G.tutHidden=!!d.tutHidden;G.unl=d.unl||{heat:true,adv:true,menu:true};
   G.stats=Object.assign({explosions:0,sold:0,built:0,sells:0,slow:0,hoverCell:0,placeInfo:0},d.stats||{});
   for(const id in G.reactors){const R=G.reactors[id],s=d.reactors[id];if(!s)continue;
@@ -169,7 +172,7 @@ hooks.onBuild=(R,t)=>{if(view==='game'&&R===curR())fxRing(t.x*TS+TS/2,t.y*TS+TS/
 hooks.onSell=(R,t)=>{if(view==='game'&&R===curR())fxBurst(t.x*TS+TS/2,t.y*TS+TS/2,'#c8c8d4',9,70,.45)};
 hooks.onTick=()=>{
   lastTickAt=performance.now();
-  refreshHud();tutCheck();updateAlert();applyMenu();
+  renderEvents();refreshHud();tutCheck();updateAlert();applyMenu();
   if(view==='game'&&curReactor)spawnTickFx(curR());
   if(G.totalTicks%10===0)checkAch();
 };
@@ -284,7 +287,7 @@ function renderGame(){
   $('#bUndo').onclick=()=>{if(undoLast()){sfx.sell();refreshHud()}};$('#bRedo').onclick=()=>{if(redoLast()){sfx.build();refreshHud()}};
   $('#bRestore').onclick=doRestore;
   $('#bPause').onclick=()=>{if(stepMode)return;paused=!paused;restartLoop();updateButtons()};
-  $('#bFast').onclick=()=>{if(G.bonusTicks>0){playFast=!playFast;restartLoop();refreshHud()}};
+  $('#bFast').onclick=()=>{if(G.bonusTicks>0&&!EVX.noFast){playFast=!playFast;restartLoop();refreshHud()}};
   $('#bAuto').onclick=()=>{R.auto=!R.auto;refreshHud()};
   $('#bHeatView').onclick=()=>{showHeatView=!showHeatView;updateButtons()};
   $('#bNums').onclick=()=>{showNums=!showNums;updateButtons()};
@@ -346,7 +349,7 @@ function buildPalette(){
   for(const c of avail){
     if(cat!=='all'&&palCat(c)!==cat)continue;
     if(lastG&&c.group!==lastG)h+='<hr>';lastG=c.group;
-    h+=`<div class="comp${selComp&&selComp.id===c.id?' sel':''}" data-id="${c.id}">${iconImg(c,30)}<small>${isFree(R)?'&nbsp;':nf(c.price)}</small></div>`;
+    h+=`<div class="comp${selComp&&selComp.id===c.id?' sel':''}" data-id="${c.id}">${iconImg(c,30)}<small>${isFree(R)?'&nbsp;':nf(priceOf(c))}</small></div>`;
   }
   paletteEl.innerHTML=h;
   paletteEl.onmouseleave=()=>showInfoText('');
@@ -358,7 +361,7 @@ function buildPalette(){
 }
 function updatePaletteDim(){
   if(!paletteEl)return;const R=curR();
-  paletteEl.querySelectorAll('.comp').forEach(el=>el.style.opacity=(isFree(R)||afford(G.money,CBY[el.dataset.id].price))?1:.4);
+  paletteEl.querySelectorAll('.comp').forEach(el=>el.style.opacity=(isFree(R)||afford(G.money,priceOf(CBY[el.dataset.id])))?1:.4);
 }
 
 /* ---- tooltip flotante (sustituye al panel de información) ---- */
@@ -406,7 +409,7 @@ function stratInfo(R,c,t){
 }
 function showCompInfo(R,c){
   const u=UB(R,c);
-  let h=`<div style="float:right;margin-left:8px">${iconImg(c,40)}</div><b>${c.name}</b><br><span class="d">${c.desc}</span><br>Precio: <b class="money">${nf(c.price)}</b><br>`;
+  let h=`<div style="float:right;margin-left:8px">${iconImg(c,40)}</div><b>${c.name}</b><br><span class="d">${c.desc}</span><br>Precio: <b class="money">${nf(priceOf(c))}</b>${EVX.price!==1?` <span class="small ${EVX.price<1?'good':'bad'}">(${EVX.price<1?'oferta':'inflación'})</span>`:''}<br>`;
   if(c.lifetime)h+=`Ticks de vida: <b>${nf(c.lifetime*u.lifetimeMultiplayer)}</b><br>`;
   if(c.maxHeat)h+=`Calor máx.: <b class="heat">${nf(c.maxHeat*u.maxHeatMultiplayer)}</b><br>`;
   if(c.maxWater&&(gres('waterPump')||isFree(R)))h+=`Agua máx.: <b class="power">${nf(c.maxWater*u.maxWaterMultiplayer)}</b><br>`;
@@ -439,7 +442,7 @@ function showTileInfo(R,t){
     // sin pieza elegida no hay nada que explicar: no se muestra nada
     if(!(selComp&&mode==='build')){showInfoText('');return}
     let h='';
-    if(!canBuild(R,t,selComp))h+=`<span class="bad">${!isFree(R)&&!afford(G.money,selComp.price)?`No tienes dinero para ${selComp.name} (${nf(selComp.price)}).`:'No se puede construir aquí.'}</span>`;
+    if(!canBuild(R,t,selComp))h+=`<span class="bad">${!isFree(R)&&!afford(G.money,priceOf(selComp))?`No tienes dinero para ${selComp.name} (${nf(priceOf(selComp))}).`:'No se puede construir aquí.'}</span>`;
     h+=placementHtml(R,t,selComp);
     showInfoText(`<b>${selComp.name}</b> ${h}`);return;
   }
@@ -561,7 +564,7 @@ function refreshHud(){
     $('#vMax').textContent=nf(mp);$('#vPct').textContent=Math.min(100,pc);
     const b=$('#vBar');b.style.width=Math.min(100,pc)+'%';b.className=pc>=90?'w2':pc>=70?'w1':'';
     const fast=$('#bFast');
-    fast.style.display=G.bonusTicks>0?'':'none';fast.textContent=playFast?'Normal':'Rápido ≫';
+    fast.style.display=(G.bonusTicks>0&&!EVX.noFast)?'':'none';fast.textContent=playFast?'Normal':'Rápido ≫';
     $('#bonus').textContent=G.bonusTicks>0?'Ticks extra: '+nf(G.bonusTicks):'';
     const ab=$('#bAuto');ab.style.display=(gres('windTurbineAutoRebuild')&&!isFree(R))?'':'none';ab.innerHTML='Reconstrucción auto: '+(R.auto?'<b class="good">SÍ</b>':'<b class="bad">NO</b>');
     let soon=0,gone=0;R.tiles.forEach(t=>{if(t.c&&t.c.lifetime>0){if(t.life<=0)gone++;else if(t.life<=maxLife(R,t)*.1)soon++}});
@@ -810,7 +813,7 @@ function stepCam(){
 function updateMbPiece(){
   const ic=$('#mbIcon'),nm=$('#mbName');if(!ic)return;
   ic.innerHTML=selComp?iconImg(selComp,28):'🧱';
-  nm.textContent=selComp?nf(selComp.price):'Piezas';
+  nm.textContent=selComp?nf(priceOf(selComp)):'Piezas';
 }
 function bindMobileBar(R){
   const q=id=>$(id);
@@ -999,7 +1002,11 @@ function fillResList(){
    MEJORAS
    ============================================================ */
 const upLevel=(R,u)=>R.ups[u.id]||0;
-function upPrice(R,u,sellMode){if(isFree(R))return 0;let p=u.price;const n=upLevel(R,u)-(sellMode?1:0);for(let i=0;i<n;i++)p*=u.inc;return p}
+function upPrice(R,u,sellMode){
+  if(isFree(R))return 0;let p=u.price;const n=upLevel(R,u)-(sellMode?1:0);for(let i=0;i<n;i++)p*=u.inc;
+  const ev=EVX.price*(EVX.upId===u.id?EVX.upMult:1);   // eventos: precio temporal. Al vender nunca se devuelve más de lo pagado
+  return p*(sellMode?Math.min(1,ev):ev);
+}
 function renderUpgrades(){
   const R=curR();if(!R){setView('reactors');return}
   viewEl.innerHTML=`<div class="box" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
@@ -1139,7 +1146,8 @@ $('#bHelp').onclick=()=>{
    <li><b>Aislamiento</b> no acepta calor: sube un +5 % la producción de las celdas adyacentes.</li></ol>
   <p>La <b>Vista de calor</b> muestra el relleno de calor y las flechas por donde viaja. El botón <b>Calculadora</b> (✓ Estable / ⚠) simula los próximos ${HORIZON} ticks y avisa de lo que explotaría; con una pieza elegida, el cuadro que aparece junto al mouse te dice si aguantaría en esa casilla.</p>
   <div class="row"><button id="bDemo2">Ver demostración animada del calor</button></div>
-  <p>Tiempo sin jugar: se acumulan <b>ticks extra</b> que puedes gastar con el botón Rápido.</p>`);
+  <p>Tiempo sin jugar: se acumulan <b>ticks extra</b> que puedes gastar con el botón Rápido.</p>
+  <p><b>Eventos aleatorios:</b> cada 4–8 minutos puede pasar algo: un bono (favorable), una decisión que tú aceptas o rechazas, o un contratiempo (te avisa 10 s antes). Los premios y castigos son proporcionales a tu producción y ninguno destruye piezas. Puedes quitar los adversos o todos en Ajustes.</p>`);
   m.querySelector('#cls').onclick=()=>m.remove();
   m.querySelector('#bDemo2').onclick=()=>{m.remove();openDemo()};
 };
@@ -1147,6 +1155,7 @@ $('#bSettings').onclick=()=>{
   const m=modal(`<button style="float:right" id="cls">Cerrar</button><h3>Ajustes</h3>
   <p class="small">Datos de guardado (cópialos para respaldar o pégalos para cargar). También puedes descargar un archivo.</p>
   <div id="syncBox" class="box"></div>
+  <label style="display:block;margin:8px 0"><b>Eventos aleatorios:</b> <select id="evMode"><option value="all">Todos (favorables, decisiones y adversos)</option><option value="fav">Sin adversos</option><option value="off">Desactivados</option></select></label>
   <label style="display:block;margin:8px 0"><input type="checkbox" id="adv"> <b>Modo avanzado:</b> mostrar todas las opciones desde el inicio <span class="small">(por defecto la interfaz se va revelando según avanzas)</span></label>
   <div class="box" style="margin:8px 0"><label><input type="checkbox" id="musOn"> <b>Música ambiental</b></label> <span class="small">volumen</span> <input type="range" id="musVol" min="0" max="100" style="vertical-align:middle;width:120px"></div>
   <textarea id="sd"></textarea>
@@ -1157,6 +1166,8 @@ $('#bSettings').onclick=()=>{
   m.querySelector('#musOn').checked=music.on;m.querySelector('#musVol').value=Math.round(music.vol*100);
   m.querySelector('#musOn').onchange=e=>music.setOn(e.target.checked);
   m.querySelector('#musVol').oninput=e=>music.setVol(e.target.value/100);
+  m.querySelector('#evMode').value=EVCFG.mode;
+  m.querySelector('#evMode').onchange=e=>{EVCFG.mode=uiPrefs.events=e.target.value;saveUI()};
   m.querySelector('#adv').checked=uiPrefs.advanced;
   m.querySelector('#adv').onchange=e=>{uiPrefs.advanced=e.target.checked;saveUI();applyMenu();if(view==='game'){buildPalette();applyDisclosure()}else setView(view)};
   m.querySelector('#cls').onclick=()=>m.remove();
@@ -1220,13 +1231,63 @@ function drawDemo(now){
 }
 
 /* ============================================================
+   EVENTOS ALEATORIOS (interfaz; la lógica está en events.js)
+   ============================================================ */
+const evBox=$('#evbox');let evSig='';
+const evSecs=left=>Math.max(0,Math.ceil(left*tickInterval()/1000));
+function evCard(cls,icon,name,body,id,extra){
+  return `<div class="evc ${cls}" data-card="${id}"><div class="evh"><span>${icon}</span><b>${name}</b><span class="evt" data-t="${id}"></span></div>${body?`<div class="evd">${body}</div>`:''}<div class="evbar"><i data-b="${id}"></i></div>${extra||''}</div>`;
+}
+function renderEvents(){
+  if(!evBox)return;
+  const E=G.ev;
+  const sig=E.active.map(e=>e.id).join(',')+'|'+(E.warn?E.warn.id:'')+'|'+(E.offer?E.offer.id:'');
+  if(sig!==evSig){
+    evSig=sig;let h='';
+    if(E.offer){const d=EVBY[E.offer.id];
+      h+=evCard('dec',d.icon,d.name+' <span class="small">· decisión</span>',d.desc(null,E.offer.data),'offer',
+        '<div class="row"><button data-ans="1">Aceptar</button><button data-ans="0">Rechazar</button></div>')}
+    if(E.warn){const d=EVBY[E.warn.id];h+=evCard('adv',d.icon,'⚠ '+d.name,d.desc?d.desc():'Algo va a pasar en breve…','warn')}
+    for(const e of E.active)h+=evCard((e.def.kind==='dec'?'dec':e.def.kind)+' mini',e.def.icon,e.def.name,e.def.desc?e.def.desc(e,e.data):'',e.id);
+    evBox.innerHTML=h;
+  }
+  const upd=(id,left,total,suffix)=>{
+    const t=evBox.querySelector('[data-t="'+id+'"]'),b=evBox.querySelector('[data-b="'+id+'"]');
+    if(t)t.textContent=(suffix||'')+evSecs(left)+' s';if(b)b.style.width=Math.max(0,100*left/total)+'%';
+  };
+  if(E.offer)upd('offer',E.offer.left,E.offer.total);
+  if(E.warn)upd('warn',E.warn.left,E.warn.total,'en ');
+  for(const e of E.active){
+    upd(e.id,e.left,e.total);
+    if(e.def.progress){const t=evBox.querySelector('[data-t="'+e.id+'"]');if(t)t.textContent=Math.round(100*e.def.progress(e))+' % · '+evSecs(e.left)+' s'}
+    if(e.id==='inspection'){const t=evBox.querySelector('[data-t="inspection"]');if(t)t.textContent='calor máx. '+Math.round(100*hotRatio())+' % · '+evSecs(e.left)+' s'}
+  }
+}
+evBox&&evBox.addEventListener('click',e=>{
+  const b=e.target.closest('[data-ans]');if(!b)return;
+  evAnswer(b.dataset.ans==='1');sfx.click();renderEvents();
+});
+EVCFG.onEvent=(type,def,x)=>{
+  if(type==='warn'){sfx.warn();toast('⚠ <b>'+def.icon+' '+def.name+'</b><br><span class="small">Ocurrirá en 10 s.</span>')}
+  else if(type==='offer'){sfx.research();toast('🔔 <b>'+def.icon+' '+def.name+'</b><br><span class="small">Tienes una decisión pendiente (30 s).</span>')}
+  else if(type==='start'){(def.kind==='adv'?sfx.warn:sfx.cash)();toast(def.icon+' <b>'+def.name+'</b>'+(def.kind==='adv'?'':''))}
+  else if(type==='instant'){(def.kind==='adv'?sfx.warn:sfx.cash)();toast(def.icon+' <b>'+def.name+'</b><br><span class="small">'+(x||'')+'</span>')}
+  else if(type==='end'&&x)toast(def.icon+' <b>'+def.name+'</b><br><span class="small">'+x+'</span>');
+  else if(type==='msg')toast(def.icon+' <b>'+def.name+'</b><br><span class="small">'+x+'</span>');
+  else if(type==='skip')logMsg('Evento evitado: '+def.name);
+  evSig='';renderEvents();refreshHud();
+};
+
+/* ============================================================
    BUCLE DEL JUEGO
    ============================================================ */
 /* El reloj de ticks corre en un Web Worker: los navegadores frenan los temporizadores de las pestañas ocultas
    (o tapadas por otra aplicación), pero no los de un worker. Si aun así se pierden ticks, se pagan como «ticks extra». */
 let timer=null,worker=null,lastRun=0,missedAcc=0;
 function tickHandler(){
+  if(playFast&&EVX.noFast){playFast=false;restartLoop()}   // evento «falla de comunicación»
   const fast=playFast&&G.bonusTicks>0;
+  EVCFG.fast=fast;
   const iv=tickInterval(),now=performance.now();
   if(!fast){
     if(lastRun){
@@ -1252,7 +1313,7 @@ function setTicker(ms){
 function restartLoop(){
   lastRun=0;
   if(paused){setTicker(0);return}
-  const fast=playFast&&G.bonusTicks>0;
+  const fast=playFast&&G.bonusTicks>0&&!EVX.noFast;
   setTicker(fast?20:tickInterval());
 }
 (function initTicker(){

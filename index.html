@@ -120,6 +120,19 @@ h3{margin:4px 0 6px;font-size:13px}
 #bCloud[data-st="err"]{color:var(--bad);border-color:var(--bad)}
 body{padding-top:env(safe-area-inset-top)}
 #toasts{position:fixed;right:10px;bottom:10px;display:flex;flex-direction:column;gap:6px;z-index:30}
+#evbox{position:fixed;left:10px;bottom:10px;width:min(238px,calc(100vw - 20px));display:flex;flex-direction:column;gap:6px;z-index:28;pointer-events:none}
+#evbox>*{pointer-events:auto}
+.evc{background:#16162b;border:1px solid #3a3a60;border-radius:8px;padding:6px 9px;font-size:12px}
+.evc.fav{border-color:#2f6a2f}.evc.adv{border-color:#a8552f}.evc.dec{border-color:#e0c040;background:#201c10}
+.evc .evh{display:flex;gap:6px;align-items:center}.evc .evh b{flex:1}
+.evc .evt{color:var(--mute);font-variant-numeric:tabular-nums}
+.evc .evd{color:var(--mute);margin:3px 0}
+.evc .evbar{height:3px;background:#2a2a48;border-radius:2px;overflow:hidden}
+.evc .evbar i{display:block;height:100%;background:var(--money)}
+.evc.adv .evbar i{background:#d9763a}.evc.fav .evbar i{background:var(--good)}
+.evc .row{margin-top:5px}
+.evc.mini .evd{display:none}
+.evc.mini{padding:4px 9px}
 .toast{background:#1d1a34;border:1px solid #e0c040;border-radius:8px;padding:8px 12px;animation:pop .3s}
 @keyframes pop{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}
 #tut{background:#14202e;border:1px solid #3a7ab0}
@@ -182,6 +195,7 @@ body{padding-top:env(safe-area-inset-top)}
   .grid{grid-template-columns:1fr}
   .modal>div{padding:12px}
   #toasts{bottom:calc(var(--nav) + var(--mbar) + 12px + env(safe-area-inset-bottom));left:8px;right:8px}
+  #evbox{left:8px;right:8px;width:auto;bottom:auto;top:calc(8px + env(safe-area-inset-top))}
 }
 </style>
 </head>
@@ -201,9 +215,11 @@ body{padding-top:env(safe-area-inset-top)}
   </div>
   <div id="view"></div>
 </div>
+<div id="evbox"></div>
 <div id="toasts"></div>
 <script src="js/data.js"></script>
 <script src="js/sim.js"></script>
+<script src="js/events.js"></script>
 <script src="js/icons.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/ui.js"></script>

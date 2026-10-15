@@ -1148,11 +1148,15 @@ $('#bSettings').onclick=()=>{
   <p class="small">Datos de guardado (cópialos para respaldar o pégalos para cargar). También puedes descargar un archivo.</p>
   <div id="syncBox" class="box"></div>
   <label style="display:block;margin:8px 0"><input type="checkbox" id="adv"> <b>Modo avanzado:</b> mostrar todas las opciones desde el inicio <span class="small">(por defecto la interfaz se va revelando según avanzas)</span></label>
+  <div class="box" style="margin:8px 0"><label><input type="checkbox" id="musOn"> <b>Música ambiental</b></label> <span class="small">volumen</span> <input type="range" id="musVol" min="0" max="100" style="vertical-align:middle;width:120px"></div>
   <textarea id="sd"></textarea>
   <div class="row"><button id="ld">Cargar texto</button><button id="lf">Cargar archivo…</button><input type="file" id="lfi" accept=".txt,text/plain" style="display:none"><button id="dl">Descargar archivo</button><button id="rs" style="border-color:#ff5a4d">Reiniciar todo</button></div>`);
   const enc=()=>btoa(unescape(encodeURIComponent(JSON.stringify(getSave()))));
   m.querySelector('#sd').value=enc();
   renderSyncBox(m.querySelector('#syncBox'));
+  m.querySelector('#musOn').checked=music.on;m.querySelector('#musVol').value=Math.round(music.vol*100);
+  m.querySelector('#musOn').onchange=e=>music.setOn(e.target.checked);
+  m.querySelector('#musVol').oninput=e=>music.setVol(e.target.value/100);
   m.querySelector('#adv').checked=uiPrefs.advanced;
   m.querySelector('#adv').onchange=e=>{uiPrefs.advanced=e.target.checked;saveUI();applyMenu();if(view==='game'){buildPalette();applyDisclosure()}else setView(view)};
   m.querySelector('#cls').onclick=()=>m.remove();
@@ -1179,7 +1183,7 @@ $('#bMore').onclick=()=>{
 };
 const bMute=$('#bMute');
 bMute.textContent=sfx.muted?'🔇':'🔊';
-bMute.onclick=()=>{bMute.textContent=sfx.toggle()?'🔇':'🔊';sfx.click()};
+bMute.onclick=()=>{bMute.textContent=sfx.toggle()?'🔇':'🔊';sfx.click();music.sync()};
 
 /* ---- demostración animada del calor ---- */
 const demo={on:false,R:null,timer:null,caption:'',phaseIdx:0,cv:null,g:null,ticks:0};

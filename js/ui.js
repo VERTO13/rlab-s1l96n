@@ -22,9 +22,10 @@ mq.addEventListener('change',()=>{applyMobileClass();if(view==='game'&&curReacto
 
 /* ---- preferencias de interfaz y revelado progresivo ---- */
 const UIKEY='reactorIdleUI';
-const uiPrefs={advanced:false,resFilter:'pending',resGroup:'all',resQ:'',upFilter:'all',upGroup:'all',upQ:'',upSort:'orig',palCat:'all',upRows:false,zoomHint:false,events:'all'};
+const uiPrefs={advanced:false,resFilter:'pending',resGroup:'all',resQ:'',upFilter:'all',upGroup:'all',upQ:'',upSort:'orig',palCat:'all',upRows:false,zoomHint:false,events:'all',fuel:null};
 try{Object.assign(uiPrefs,JSON.parse(localStorage.getItem(UIKEY)||'{}'))}catch(e){}
 const saveUI=()=>{try{localStorage.setItem(UIKEY,JSON.stringify(uiPrefs))}catch(e){}};
+BUILD.fuel=FUELS[uiPrefs.fuel]?uiPrefs.fuel:null;   // se valida al dibujar (puede que aún no esté investigado)
 EVCFG.mode=['all','fav','off'].includes(uiPrefs.events)?uiPrefs.events:'all';
 EVCFG.tps=()=>1000/tickInterval();
 // cada herramienta aparece cuando el jugador la necesita (o todo desde el inicio con el «modo avanzado»)
@@ -62,7 +63,7 @@ function getSave(){
   const d={v:2,money:G.money,totalMoney:G.totalMoney,totalTicks:G.totalTicks,rp:G.rp,research:G.research,bonusTicks:G.bonusTicks,savedAt:Date.now(),cur:curReactor,
     ach:G.ach,stats:G.stats,tut:G.tut,tutHidden:G.tutHidden,unl:G.unl,ev:{next:G.ev.next,lastAdv:G.ev.lastAdv},reactors:{}};
   for(const id in G.reactors){const R=G.reactors[id];
-    d.reactors[id]={bought:R.bought,power:R.power,auto:R.auto,ups:R.ups,terra:R.tiles.reduce((a,t,i)=>{if(t.terrain!==t.orig)a.push(i);return a},[]),tiles:R.tiles.map(t=>t.c?[t.c.id,t.heat,t.water,t.life]:null)}}
+    d.reactors[id]={bought:R.bought,power:R.power,auto:R.auto,ups:R.ups,terra:R.tiles.reduce((a,t,i)=>{if(t.terrain!==t.orig)a.push(i);return a},[]),tiles:R.tiles.map(t=>t.c?[t.c.id,t.heat,t.water,t.life,t.fuel||null]:null)}}
   return d;
 }
 function saveGame(){try{localStorage.setItem(SAVEKEY,JSON.stringify(getSave()))}catch(e){}}
@@ -76,7 +77,7 @@ function loadSave(d,offline){
     R.bought=!!s.bought;R.power=s.power||0;R.auto=s.auto!==false;R.ups=s.ups||{};R.ubDirty=true;
     R.tiles.forEach(t=>{t.terrain=t.orig});
     (s.terra||[]).forEach(i=>{const t=R.tiles[i];if(t&&(t.orig==='water'||t.orig==='mountain'))t.terrain='grass'});
-    s.tiles.forEach((a,i)=>{const t=R.tiles[i];if(!t)return;if(a&&CBY[a[0]]){t.c=CBY[a[0]];t.heat=a[1]||0;t.water=a[2]||0;t.life=a[3]}else{t.c=null;t.heat=0;t.water=0;t.life=null}});
+    s.tiles.forEach((a,i)=>{const t=R.tiles[i];if(!t)return;if(a&&CBY[a[0]]){t.c=CBY[a[0]];t.heat=a[1]||0;t.water=a[2]||0;t.life=a[3];t.fuel=(a[4]&&FUELS[a[4]]&&fuelable(t.c))?a[4]:null}else{t.c=null;t.heat=0;t.water=0;t.life=null;t.fuel=null}});
   }
   curReactor=(d.cur&&G.reactors[d.cur])?d.cur:null;   // por si el guardado menciona un reactor que ya no existe
   if(offline&&d.savedAt){
@@ -117,6 +118,7 @@ const ACH=[
  {id:'rich',n:'Millonario',d:'Gana $1 M en total.',ok:()=>G.totalMoney>=1e6},
  {id:'nuclear',n:'Era atómica',d:'Investiga las celdas nucleares.',ok:()=>gres('nuclearCell')>=1},
  {id:'island2',n:'Expansión',d:'Compra tu segunda central.',ok:()=>realReactors().filter(R=>R.bought).length>=2},
+ {id:'node',n:'Buen ojo',d:'Construye una celda sobre un nodo especial.',ok:()=>realReactors().some(R=>R.tiles.some(t=>t.c&&t.node&&t.c.st.type==='Cell'))},
  {id:'terra',n:'Ingeniero civil',d:'Modifica 10 casillas de terreno (montañas o agua).',ok:()=>(G.stats.terra||0)>=10},
  {id:'planner',n:'Previsor',d:'Usa la calculadora previa 10 veces.',ok:()=>G.stats.placeInfo>=10}
 ];
@@ -243,6 +245,7 @@ function renderGame(){
         <button id="mPaint" title="Arrastra para repetir la acción (en móvil)">Pintar</button>
       </div>
       <div id="terraBox" class="small" style="display:none;margin:0 0 6px"></div>
+      <div id="fuelBox" style="display:none;margin:0 0 6px"></div>
       <div id="palcats" class="fbar" style="margin:0 0 6px"></div><div id="palette"></div>
       <div class="row">
         <button id="bUndo" class="sm" title="Solo mientras no pase un tick (pausa el juego para tener más margen).">↶ Deshacer</button><button id="bRedo" class="sm" title="Solo mientras no pase un tick">↷ Rehacer</button>
@@ -348,6 +351,23 @@ function doRestore(){const R=curR();beginGroup();const m=G.money;restoreAllExpir
 /* ---- paleta (con categorías cuando hay muchas piezas) ---- */
 const PAL_CATS=[['all','Todo'],['a','Celdas'],['heat','Calor'],['water','Agua'],['eco','Energía y $']];
 const palCat=c=>c.group==='a'?'a':['b','b2','c'].includes(c.group)?'heat':c.group==='ee'?'water':'eco';
+/* selector de combustible: aparece al elegir un quemador o una celda nuclear, cuando hay algún combustible investigado */
+let fuelSig='';
+function renderFuelBox(force){
+  const el=$('#fuelBox');if(!el)return;
+  const R=curR();if(!R)return;
+  const av=Object.values(FUELS).filter(f=>isFree(R)||gres(f.req));
+  if(BUILD.fuel&&!av.some(f=>f.id===BUILD.fuel))BUILD.fuel=null;
+  const show=!!(selComp&&fuelable(selComp)&&av.length);
+  const sig=(show?selComp.id:'-')+'|'+av.map(f=>f.id).join(',')+'|'+BUILD.fuel;
+  if(!force&&sig===fuelSig)return;fuelSig=sig;
+  if(!show){el.style.display='none';el.innerHTML='';return}
+  const cur=FUELS[BUILD.fuel];
+  el.style.display='';
+  el.innerHTML='<div class="fbar" style="margin:0"><span class="small">Combustible:</span>'+fchip('Estándar',!BUILD.fuel,'data-f=""')+av.map(f=>fchip(f.name,BUILD.fuel===f.id,'data-f="'+f.id+'"')).join('')+'</div>'+
+    '<div class="small d" style="margin-top:3px">'+(cur?`<b>${cur.full}</b>: calor ×${cur.heat}, vida ×${cur.life}, precio ×${cur.price}. ${cur.id==='dense'?'Concentra el calor en menos casillas; cuesta 20 % más por calor y hay que reconstruirlo seguido.':'Sale 33 % más barato por calor, pero necesitas más celdas y más generadores para la misma energía.'}`:'Calor, vida y precio normales.')+'</div>';
+  el.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{BUILD.fuel=b.dataset.f||null;uiPrefs.fuel=BUILD.fuel;saveUI();fuelSig='';buildPalette();showCompInfo(curR(),selComp);sfx.click()});
+}
 function buildPalette(){
   const R=curR();
   const avail=availComps(R);palCount=avail.length;
@@ -364,7 +384,7 @@ function buildPalette(){
   for(const c of avail){
     if(cat!=='all'&&palCat(c)!==cat)continue;
     if(lastG&&c.group!==lastG)h+='<hr>';lastG=c.group;
-    h+=`<div class="comp${selComp&&selComp.id===c.id?' sel':''}" data-id="${c.id}">${iconImg(c,30)}<small>${isFree(R)?'&nbsp;':nf(priceOf(c))}</small></div>`;
+    h+=`<div class="comp${selComp&&selComp.id===c.id?' sel':''}" data-id="${c.id}">${iconImg(c,30)}<small>${isFree(R)?'&nbsp;':nf(buildPrice(c))}</small></div>`;
   }
   paletteEl.innerHTML=h;
   paletteEl.onmouseleave=()=>showInfoText('');
@@ -372,11 +392,12 @@ function buildPalette(){
     el.onclick=()=>{selComp=CBY[el.dataset.id];if(mode!=='build'&&mode!=='paste')setMode('build');buildPalette();if(isMobile()){document.body.classList.remove('sheet-open');updateButtons()}else showCompInfo(R,selComp);sfx.click()};
     el.onmouseover=()=>showCompInfo(R,CBY[el.dataset.id]);
   });
-  updatePaletteDim();
+  updatePaletteDim();renderFuelBox();
 }
 function updatePaletteDim(){
   if(!paletteEl)return;const R=curR();
-  paletteEl.querySelectorAll('.comp').forEach(el=>el.style.opacity=(isFree(R)||afford(G.money,priceOf(CBY[el.dataset.id])))?1:.4);
+  paletteEl.querySelectorAll('.comp').forEach(el=>el.style.opacity=(isFree(R)||afford(G.money,buildPrice(CBY[el.dataset.id])))?1:.4);
+  renderFuelBox();
 }
 
 /* ---- tooltip flotante (sustituye al panel de información) ---- */
@@ -405,7 +426,7 @@ function stratInfo(R,c,t){
   switch(s.type){
     case 'Cell':
       if(s.powerProduction>0)h+=`Produce energía: <b class="power">${nf(powerProdOf(R,c))}</b> `;
-      if(s.heatProduction>0)h+=`Produce calor: <b class="heat">${nf(t?heatProdOf(R,t):s.heatProduction*u.heatProductionMultiplayer)}</b> `;break;
+      if(s.heatProduction>0)h+=`Produce calor: <b class="heat">${nf(t?heatProdOf(R,t):s.heatProduction*u.heatProductionMultiplayer*(fuelable(c)&&FUELS[BUILD.fuel]?FUELS[BUILD.fuel].heat:1))}</b>${!t&&fuelable(c)&&FUELS[BUILD.fuel]?` <span class="small">(${FUELS[BUILD.fuel].full})</span>`:''} `;break;
     case 'PowerToMoneyConverter':h+=`Vende <b class="power">${nf(s.maxSellPower*u.powerSellAmountMultiplayer*(t&&t.b?t.b.powerToMoneyMultiplayer:1))}</b> de energía.`;break;
     case 'HeatToPowerConverter':{let n=convAmount(R,c),w='';
       if(t){const x=t.wc*s.waterEffectiveness;if(x>0){n+=x;w=` Bono de agua: <b class="heat">${nf(x)}</b>`}}
@@ -424,8 +445,8 @@ function stratInfo(R,c,t){
 }
 function showCompInfo(R,c){
   const u=UB(R,c);
-  let h=`<div style="float:right;margin-left:8px">${iconImg(c,40)}</div><b>${c.name}</b><br><span class="d">${c.desc}</span><br>Precio: <b class="money">${nf(priceOf(c))}</b>${EVX.price!==1?` <span class="small ${EVX.price<1?'good':'bad'}">(${EVX.price<1?'oferta':'inflación'})</span>`:''}<br>`;
-  if(c.lifetime)h+=`Ticks de vida: <b>${nf(c.lifetime*u.lifetimeMultiplayer)}</b><br>`;
+  let h=`<div style="float:right;margin-left:8px">${iconImg(c,40)}</div><b>${c.name}</b><br><span class="d">${c.desc}</span><br>Precio: <b class="money">${nf(buildPrice(c))}</b>${EVX.price!==1?` <span class="small ${EVX.price<1?'good':'bad'}">(${EVX.price<1?'oferta':'inflación'})</span>`:''}<br>`;
+  if(c.lifetime)h+=`Ticks de vida: <b>${nf(c.lifetime*u.lifetimeMultiplayer*(fuelable(c)&&FUELS[BUILD.fuel]?FUELS[BUILD.fuel].life:1))}</b><br>`;
   if(c.maxHeat)h+=`Calor máx.: <b class="heat">${nf(c.maxHeat*u.maxHeatMultiplayer)}</b><br>`;
   if(c.maxWater&&(gres('waterPump')||isFree(R)))h+=`Agua máx.: <b class="power">${nf(c.maxWater*u.maxWaterMultiplayer)}</b><br>`;
   h+=stratInfo(R,c,null);
@@ -450,6 +471,18 @@ function placementHtml(R,t,c){
   }
   plCache={key,html:h,ok};previewOk=ok;return h;
 }
+/* texto de un nodo; con una pieza, dice si le sirve */
+function nodeInfo(t,c){
+  const nd=NODES[t.node];if(!nd)return '';
+  let h=`<b style="color:${nd.col}">${nd.icon} ${nd.name}</b><br><span class="d">${nd.desc}</span>`;
+  if(c){
+    const yes='<br><span class="good">✔ Le aplica a esta pieza.</span>',no=t=>`<br><span class="small">${t}</span>`;
+    if(t.node==='geo')h+=c.st.type==='Cell'?yes:no('Solo sirve para celdas.');
+    else if(t.node==='uranium')h+=nuclear(c)?yes:no('Solo sirve para celdas nucleares.');
+    else if(t.node==='spring')h+=(c.acceptsWater&&c.maxWater)?yes:no('Las piezas de al lado que usen agua la recibirán.');
+  }
+  return h;
+}
 function showTileInfo(R,t){
   previewOk=null;
   if(t.terrain!=='grass'&&mode==='terrain'){
@@ -461,17 +494,19 @@ function showTileInfo(R,t){
   if(t.terrain!=='grass'){showInfoText(t.terrain==='water'?'Agua':t.terrain==='mountain'?'Montaña: no se puede construir.':'No se puede construir aquí.');return}
   if(!t.c){
     // sin pieza elegida no hay nada que explicar: no se muestra nada
-    if(!(selComp&&mode==='build')){showInfoText('');return}
+    if(!(selComp&&mode==='build')){showInfoText(t.node?nodeInfo(t):'');return}
     let h='';
-    if(!canBuild(R,t,selComp))h+=`<span class="bad">${!isFree(R)&&!afford(G.money,priceOf(selComp))?`No tienes dinero para ${selComp.name} (${nf(priceOf(selComp))}).`:'No se puede construir aquí.'}</span>`;
-    h+=placementHtml(R,t,selComp);
+    if(!canBuild(R,t,selComp))h+=`<span class="bad">${!isFree(R)&&!afford(G.money,buildPrice(selComp))?`No tienes dinero para ${selComp.name} (${nf(buildPrice(selComp))}).`:'No se puede construir aquí.'}</span>`;
+    h+=placementHtml(R,t,selComp)+(t.node?'<br>'+nodeInfo(t,selComp):'');
     showInfoText(`<b>${selComp.name}</b> ${h}`);return;
   }
   const c=t.c;
   let h=`<div style="float:right;margin-left:8px">${iconImg(c,40)}</div><b>${c.name}</b><br><span class="d">${c.desc}</span><br>`;
   if(c.maxHeat>0)h+=`Calor: <b class="heat">${nf(t.heat)} / ${nf(maxHeat(R,t))}</b><br>`;
   if(c.maxWater>0&&(gres('waterPump')||isFree(R)))h+=`Agua: <b class="power">${nf(t.water)} / ${nf(maxWater(R,t))}</b><br>`;
-  if(c.lifetime>0)h+=`Ticks: <b>${nf(t.life)} / ${nf(maxLife(R,t))}</b><br>`;
+  if(c.lifetime>0)h+=`Ticks: <b>${t.node==='geo'?'∞ (fuente geotérmica)':nf(t.life)+' / '+nf(maxLife(R,t))}</b><br>`;
+  if(t.fuel)h+=`Combustible: <b>${FUELS[t.fuel].full}</b> <span class="small">(calor ×${FUELS[t.fuel].heat}, vida ×${FUELS[t.fuel].life})</span><br>`;
+  if(t.node)h+=nodeInfo(t,c)+'<br>';
   h+=stratInfo(R,c,t)+'<br>';
   if(t.dump&&c.st.type==='Cell'){h+=`<span class="d">Repartió su calor entre ${t.dump.length} casilla(s): ${nf(t.dump[0].amt)} a cada una.</span><br>`;G.stats.hoverCell++;}
   if(t.dump&&c.st.type==='HeatInlet')h+=`<span class="d">Mandó ${nf(t.dump[0].amt*t.dump.length)} a ${t.dump.length} salida(s).</span><br>`;
@@ -665,6 +700,30 @@ function updateFx(g,R,now,dt){
    ============================================================ */
 const TCOL={grass:['#3f8a35','#448f39','#3b8431','#468f3c'],sand:['#d6c27a','#d2be76'],water:['#3d8fcb','#4296d2'],mountain:['#3f8a35']};
 function heatCol(r,a){r=Math.max(0,Math.min(1,r));const hue=60-60*r;return `hsla(${hue},95%,${52-8*r}%,${a})`}
+/* marcador de un nodo especial (debajo de las piezas) */
+function drawNode(g,t,now,anim){
+  const x=t.x*TS,y=t.y*TS,cx=x+TS/2,cy=y+TS/2,k=t.node,ph=now/500+t.x+t.y,nd=NODES[k];
+  g.save();
+  if(k==='geo'){
+    g.fillStyle='#3a1f10';g.beginPath();g.ellipse(cx,cy+3,TS*.34,TS*.24,0,0,7);g.fill();
+    g.fillStyle='rgb(255,'+Math.round(110+40*Math.sin(ph))+',30)';g.beginPath();g.ellipse(cx,cy+3,TS*.22,TS*.13,0,0,7);g.fill();
+    if(anim)for(let i=0;i<3;i++){const q=((now/1400+i/3)%1);g.fillStyle='rgba(255,255,255,'+(.4*(1-q))+')';g.beginPath();g.arc(cx+Math.sin(q*6+i*2)*3,cy-q*15,2+q*3,0,7);g.fill()}
+  }else if(k==='uranium'){
+    const gl=.5+.3*Math.sin(ph);
+    g.fillStyle='rgba(90,224,90,'+(.18+.12*gl)+')';g.beginPath();g.arc(cx,cy,TS*.42,0,7);g.fill();
+    for(const [dx,dy,s] of [[-6,3,.9],[2,-1,1.2],[8,4,.75]]){
+      g.fillStyle='rgb('+Math.round(60+60*gl)+',220,'+Math.round(80+50*gl)+')';
+      g.beginPath();g.moveTo(cx+dx,cy+dy-9*s);g.lineTo(cx+dx+4.5*s,cy+dy);g.lineTo(cx+dx,cy+dy+7*s);g.lineTo(cx+dx-4.5*s,cy+dy);g.closePath();g.fill();
+      g.strokeStyle='#1d5a1d';g.lineWidth=1;g.stroke();
+    }
+  }else{
+    g.fillStyle='#2a78b8';g.beginPath();g.ellipse(cx,cy+1,TS*.34,TS*.26,0,0,7);g.fill();
+    g.fillStyle='#74c8ff';g.beginPath();g.ellipse(cx,cy+1,TS*.24,TS*.17,0,0,7);g.fill();
+    if(anim)for(let i=0;i<2;i++){const q=((now/1100+i/2)%1);g.strokeStyle='rgba(255,255,255,'+(.7*(1-q))+')';g.lineWidth=1.2;g.beginPath();g.ellipse(cx,cy+1,TS*(.1+.3*q),TS*(.07+.22*q),0,0,7);g.stroke()}
+  }
+  g.strokeStyle=nd.col;g.globalAlpha=.85;g.lineWidth=1.5;g.setLineDash([3,3]);g.strokeRect(x+2.5,y+2.5,TS-5,TS-5);
+  g.restore();
+}
 function drawMap(g,R,now,o){
   const W=R.meta.w,H=R.meta.h;
   g.clearRect(0,0,W*TS,H*TS);
@@ -683,6 +742,7 @@ function drawMap(g,R,now,o){
         g.beginPath();g.moveTo(x+6,y+TS/2+Math.sin(ph)*3);g.quadraticCurveTo(x+TS/2,y+TS/2-4+Math.sin(ph+1)*3,x+TS-6,y+TS/2+Math.sin(ph+2)*3);g.stroke();
       }
     }
+    if(t.node&&t.terrain==='grass')drawNode(g,t,now,o.anim);
     g.strokeStyle='rgba(0,0,0,.08)';g.lineWidth=1;g.strokeRect(x+.5,y+.5,TS-1,TS-1);
   }
   if(o.anim){ // sombras de nubes que pasan lentamente
@@ -710,6 +770,8 @@ function drawMap(g,R,now,o){
       if(glow>0){g.save();const gr=g.createRadialGradient(cx,cy,2,cx,cy,TS*.85);gr.addColorStop(0,`rgba(${gc},${glow*.6})`);gr.addColorStop(1,`rgba(${gc},0)`);g.fillStyle=gr;g.fillRect(x-8,y-8,TS+16,TS+16);g.restore()}
     }
     drawIcon(g,c,cx,cy,TS*.98,o.anim?{t:now,on}:null);
+    if(t.node){g.fillStyle=NODES[t.node].col;g.beginPath();g.arc(x+TS-6,y+6,3.5,0,7);g.fill();g.strokeStyle='#000b';g.lineWidth=1;g.stroke()}
+    if(t.fuel){g.fillStyle=FUELS[t.fuel].col;g.fillRect(x+TS-9,y+12,6,6);g.strokeStyle='#000b';g.lineWidth=1;g.strokeRect(x+TS-9,y+12,6,6)}
     if(o.heat&&c.maxHeat){ // el calor «llena» el edificio de abajo hacia arriba
       const r=t.heat/maxHeat(R,t);
       if(r>0){g.save();g.beginPath();g.roundRect(x+1,y+1,TS-2,TS-2,4);g.clip();
@@ -717,7 +779,7 @@ function drawMap(g,R,now,o){
     }
     let pc=0,bc='#e8553a';
     if(c.maxHeat>0){pc=t.heat/maxHeat(R,t);bc='#e8553a'}
-    else if(c.lifetime>0){pc=t.life/maxLife(R,t);bc='#5fc84a'}
+    else if(c.lifetime>0){pc=t.node==='geo'?1:t.life/maxLife(R,t);bc=t.node==='geo'?'#e07a2a':'#5fc84a'}
     else if(c.maxWater>0){pc=t.water/maxWater(R,t);bc='#4aa0e8'}
     g.fillStyle='#000a';g.fillRect(x+3,y+TS-6,TS-6,3);
     g.fillStyle=bc;g.fillRect(x+3,y+TS-6,(TS-6)*Math.min(1,pc),3);
@@ -834,7 +896,7 @@ function stepCam(){
 function updateMbPiece(){
   const ic=$('#mbIcon'),nm=$('#mbName');if(!ic)return;
   ic.innerHTML=selComp?iconImg(selComp,28):'🧱';
-  nm.textContent=selComp?nf(priceOf(selComp)):'Piezas';
+  nm.textContent=selComp?nf(buildPrice(selComp)):'Piezas';
 }
 function bindMobileBar(R){
   const q=id=>$(id);
@@ -1176,6 +1238,7 @@ $('#bHelp').onclick=()=>{
   <p>La <b>Vista de calor</b> muestra el relleno de calor y las flechas por donde viaja. El botón <b>Calculadora</b> (✓ Estable / ⚠) simula los próximos ${HORIZON} ticks y avisa de lo que explotaría; con una pieza elegida, el cuadro que aparece junto al mouse te dice si aguantaría en esa casilla.</p>
   <div class="row"><button id="bDemo2">Ver demostración animada del calor</button></div>
   <p>Tiempo sin jugar: se acumulan <b>ticks extra</b> que puedes gastar con el botón Rápido.</p>
+  <p><b>Nodos especiales:</b> las casillas marcadas del mapa dan ventajas: <b>♨ fuente geotérmica</b> (la celda de encima no se desgasta), <b>💠 veta de uranio</b> (+50 % de calor a una celda nuclear) y <b>💧 manantial</b> (agua gratis a las piezas de al lado). Pasa el ratón para ver qué hace cada una. <b>Combustibles:</b> al elegir un quemador o una celda nuclear puedes cambiar el combustible (tras investigarlo): <i>denso</i> concentra mucho calor en una celda, <i>ciclo largo</i> sale más barato por calor.</p>
   <p><b>Terreno:</b> con el botón ⛏ <b>Terreno</b> (tecla T) puedes despejar montañas o rellenar agua para convertirlas en pasto y construir ahí. Es permanente, cada casilla modificada encarece la siguiente un 6 %, y no puedes tapar el agua que una bomba necesita.</p>
   <p><b>Eventos aleatorios:</b> cada 4–8 minutos puede pasar algo: un bono (favorable), una decisión que tú aceptas o rechazas, o un contratiempo (te avisa 10 s antes). Los premios y castigos son proporcionales a tu producción y ninguno destruye piezas. Puedes quitar los adversos o todos en Ajustes.</p>`);
   m.querySelector('#cls').onclick=()=>m.remove();

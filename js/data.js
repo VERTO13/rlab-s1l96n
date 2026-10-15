@@ -23,6 +23,18 @@ function nf(v){
   }
   return (neg?'-':'')+out;
 }
+/* combustibles (idea propia): se eligen al construir una celda de calor (quemadores y nucleares, no la solar).
+   heat = multiplicador de calor · life = de vida útil · price = de precio.  Costo por calor: denso ×1,2 · ciclo largo ×0,67 */
+const FUELS={
+ dense:{id:'dense',name:'Denso',full:'Combustible denso',heat:3,life:.25,price:.9,req:'fuelDense',col:'#e0553a'},
+ long:{id:'long',name:'Ciclo largo',full:'Combustible de ciclo largo',heat:.6,life:2.5,price:1,req:'fuelLong',col:'#4aa8e0'}
+};
+/* nodos especiales del terreno (posiciones fijas por mapa, ver assignNodes en sim.js) */
+const NODES={
+ geo:{id:'geo',name:'Fuente geotérmica',icon:'♨️',col:'#e07a2a',desc:'La celda que construyas encima no se desgasta: vida infinita, sin reconstruirla.'},
+ uranium:{id:'uranium',name:'Veta de uranio',icon:'💠',col:'#5ae05a',desc:'Una celda nuclear construida encima produce +50 % de calor.'},
+ spring:{id:'spring',name:'Manantial',icon:'💧',col:'#4ab0ff',desc:'Da agua gratis a las piezas de al lado (y a la de encima) que usen agua, sin necesidad de bomba.'}
+};
 const TERR={' ':'grass',s:'sand',w:'water','.':'mountain'};
 const PAT_S={1:[[-1,0],[0,-1],[1,0],[0,1]]};
 PAT_S[2]=PAT_S[1].concat([[-1,-1],[-1,1],[1,1],[1,-1],[-2,0],[0,-2],[2,0],[0,2]]);
@@ -203,6 +215,8 @@ R('generator5','c','Generador 5','Convierte una enorme cantidad de calor en ener
  const ord=[];for(let i=0;i<a.length;i+=2)ord.push(a[i],a[i+1]);
  RES.length=0;RES.push(...rest,...ord)})();
 RES.push({id:'windTurbineAutoRebuild',group:'a',name:'Gestor de turbinas',desc:'Las turbinas eólicas se reemplazan automáticamente.',req:'researchCenter',rp:100,max:1,icon:'windTurbine'});
+R('fuelLong','a','Combustible de ciclo largo','Nuevo combustible para quemadores y celdas nucleares: dura 2,5 veces más y sale 33 % más barato por calor, pero cada celda produce 40 % menos calor.','coalBurner',3e5,1,0,0,'coalBurner');
+R('fuelDense','a','Combustible denso','Nuevo combustible para quemadores y celdas nucleares: ×3 de calor por celda, pero dura 4 veces menos y sale 20 % más caro por calor. Útil cuando falta espacio.','gasBurner',6e6,1,0,0,'gasBurner');
 const RESBY={};RES.forEach(r=>RESBY[r.id]=r);
 
 const TICKS_MAXBONUS=4000,TICKS_MINBONUS=10,OFFLINE_SLOWER=10;

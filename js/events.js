@@ -43,7 +43,7 @@ function evEstimate(def){
   const base=sum(),keep=Object.assign({},EVX);let withE;
   try{def.fx(EVX,{data:{}});withE=sum()}finally{Object.assign(EVX,keep)}
   let perLife=0;
-  for(const R of rs)for(const t of R.tiles)if(t.c&&t.c.st.type==='Cell'&&t.life>0){const ml=maxLife(R,t);if(ml>0)perLife+=t.c.price/ml}
+  for(const R of rs)for(const t of R.tiles)if(t.c&&t.c.st.type==='Cell'&&t.life>0&&t.node!=='geo'){const ml=maxLife(R,t);if(ml>0)perLife+=t.c.price/ml}
   const gain=(withE-base)*total,cost=perLife*Math.max(0,def.wearMult-1)*total;
   return {gain,cost,net:gain-cost};
 }
@@ -102,7 +102,7 @@ const EVDEFS=[
   end:e=>{addMoney(e.data.win);return 'Inspección superada: <b>+'+evMoney(e.data.win)+'</b>.'},
   ok:()=>hasCells()&&G.emaInc>0&&hotRatio()<.6},
  {id:'maintenance',kind:'adv',icon:'🔧',name:'Desgaste imprevisto',instant:true,
-  run:()=>{for(const R of realR())for(const t of R.tiles)if(t.c&&t.c.st.type==='Cell'&&t.life>0){const ml=maxLife(R,t);t.life=Math.max(0,t.life-.05*ml)}
+  run:()=>{for(const R of realR())for(const t of R.tiles)if(t.c&&t.c.st.type==='Cell'&&t.life>0&&t.node!=='geo'){const ml=maxLife(R,t);t.life=Math.max(0,t.life-.05*ml)}
     return 'Tus celdas pierden un <b>5 % de su vida útil</b>.'},
   ok:()=>hasCells()},
  {id:'blackout',kind:'adv',icon:'🔌',name:'Apagón de red',secs:60,group:'sell',

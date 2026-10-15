@@ -7,7 +7,11 @@ const hooks={log(){},onTick(){},onBoom(){},onBuild(){},onSell(){}};
 
 /* modificadores temporales que aplican los eventos (events.js). Valores neutros = juego normal */
 const EVX={sell:1,conv:1,water:1,price:1,cellPower:1,cellHeat:1,wear:1,noFast:false,upId:null,upMult:1};
-const priceOf=c=>c.price*EVX.price;
+const BUILD={fuel:null};   // combustible elegido para construir (lo fija la interfaz)
+const fuelable=c=>c.st.type==='Cell'&&c.st.heatProduction>0&&c.id!=='solarCell';
+const SPRING_WATER=20000;
+const priceOf=(c,fuel)=>c.price*EVX.price*(fuel&&FUELS[fuel]?FUELS[fuel].price:1);
+const buildPrice=c=>priceOf(c,fuelable(c)?BUILD.fuel:null);
 const G={earned:0,emaInc:0,emaRp:0,emaN:0,money:1,totalMoney:0,totalTicks:0,rp:0,research:{},bonusTicks:0,reactors:{},ach:{},stats:{explosions:0,sold:0,built:0}};
 
 function makeReactor(meta){
@@ -16,9 +20,33 @@ function makeReactor(meta){
   for(let y=0;y<meta.h;y++)for(let x=0;x<meta.w;x++){
     const ch=meta.layout[y*meta.w+x];
     const tr=TERR[ch]||'water';
-    R.tiles.push({x,y,terrain:tr,orig:tr,c:null,heat:0,water:0,wc:0,life:null,b:null,inHeat:0,dump:null,delta:0,heatOut:0});
+    R.tiles.push({x,y,terrain:tr,orig:tr,node:null,fuel:null,c:null,heat:0,water:0,wc:0,life:null,b:null,inHeat:0,dump:null,delta:0,heatOut:0});
   }
+  if(!(typeof NO_NODES!=='undefined'&&NO_NODES))assignNodes(R);
   return R;
+}
+/* Nodos especiales: posiciones deterministas (mismo mapa → mismos nodos), separados entre sí y sobre pasto con vecinos de pasto.
+   2 en los mapas chicos, hasta 6 en los grandes. Tipos en ciclo: geotérmica, manantial, uranio… */
+function assignNodes(R){
+  if(R.meta.sandbox)return;
+  const W=R.meta.w,H=R.meta.h;
+  let h=2166136261;for(const ch of R.meta.id){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)}
+  const rnd=()=>{h^=h<<13;h^=h>>>17;h^=h<<5;return (h>>>0)/4294967296};
+  const at=(x,y)=>(x<0||y<0||x>=W||y>=H)?null:R.tiles[y*W+x];
+  const D4=[[1,0],[-1,0],[0,1],[0,-1]];
+  R.tiles.forEach(t=>t.node=null);
+  const g=R.tiles.filter(t=>t.orig==='grass'&&D4.filter(([dx,dy])=>{const n=at(t.x+dx,t.y+dy);return n&&n.orig==='grass'}).length>=2);
+  const k=Math.max(2,Math.min(6,Math.round(g.length/70)));
+  const TYPES=['geo','spring','uranium','geo','spring','uranium'];
+  const wet=t=>D4.some(([dx,dy])=>{const n=at(t.x+dx,t.y+dy);return n&&n.orig==='water'});
+  const chosen=[];
+  for(let i=0;i<k;i++){
+    const type=TYPES[i];
+    let pool=g.filter(t=>!t.node&&chosen.every(q=>Math.abs(q.x-t.x)+Math.abs(q.y-t.y)>=3));
+    if(type==='spring'&&pool.some(wet))pool=pool.filter(wet);
+    if(!pool.length)break;
+    const t=pool[Math.floor(rnd()*pool.length)];t.node=type;chosen.push(t);
+  }
 }
 REACTORS.forEach(m=>G.reactors[m.id]=makeReactor(m));
 const gres=id=>G.research[id]||0;
@@ -57,13 +85,17 @@ const UB=(R,c)=>{if(R.ubDirty||!R.ub)computeUB(R);return R.ub[c.id]};
 /* ---- propiedades de casilla ---- */
 const maxHeat=(R,t)=>t.c.maxHeat*UB(R,t.c).maxHeatMultiplayer;
 const maxWater=(R,t)=>t.c.maxWater*UB(R,t.c).maxWaterMultiplayer*(t.b?t.b.maxWaterBonus:1);
-const maxLife=(R,t)=>t.c?(t.c.lifetime?t.c.lifetime*UB(R,t.c).lifetimeMultiplayer:null):null;
+const maxLife=(R,t)=>t.c?(t.c.lifetime?t.c.lifetime*UB(R,t.c).lifetimeMultiplayer*(FUELS[t.fuel]?FUELS[t.fuel].life:1):null):null;
 function setComp(R,t,c){
+  if(!c||!fuelable(c))t.fuel=null;
   t.c=c;t.heat=0;t.water=0;t.wc=0;t.life=null;t.dump=null;
   if(c&&c.lifetime)t.life=maxLife(R,t);
 }
 const getMaxPower=R=>R.meta.maxPower+R.tileBonus;
-function heatProdOf(R,t){return t.c.st.heatProduction*EVX.cellHeat*UB(R,t.c).heatProductionMultiplayer*(t.b?t.b.heatProductionBonus:1)}
+const nuclear=c=>/^nuclearCell/.test(c.id);
+const nodeHeat=t=>(t.node==='uranium'&&nuclear(t.c))?1.5:1;
+const fuelHeat=t=>FUELS[t.fuel]?FUELS[t.fuel].heat:1;
+function heatProdOf(R,t){return t.c.st.heatProduction*nodeHeat(t)*fuelHeat(t)*EVX.cellHeat*UB(R,t.c).heatProductionMultiplayer*(t.b?t.b.heatProductionBonus:1)}
 function powerProdOf(R,c){return c.st.powerProduction*EVX.cellPower*UB(R,c).powerProductionMultiplayer}
 function convAmount(R,c){return c.st.convertHeatToPower*EVX.conv*UB(R,c).heatToPowerConversionMultiplayer}
 function patternFor(c){
@@ -90,8 +122,8 @@ function endGroup(){
   if(hist.group&&hist.group.length&&histValid(hist.group)){hist.undo.push(hist.group);if(hist.undo.length>200)hist.undo.shift();hist.redo.length=0}
   hist.group=null;
 }
-const snapT=t=>({c:t.c,heat:t.heat,water:t.water,life:t.life,terrain:t.terrain});
-function applySnap(t,s){if(s.terrain)t.terrain=s.terrain;t.c=s.c;t.heat=s.heat;t.water=s.water;t.life=s.life;t.wc=0;t.dump=null}
+const snapT=t=>({c:t.c,heat:t.heat,water:t.water,life:t.life,terrain:t.terrain,fuel:t.fuel});
+function applySnap(t,s){if(s.terrain)t.terrain=s.terrain;t.fuel=s.fuel||null;t.c=s.c;t.heat=s.heat;t.water=s.water;t.life=s.life;t.wc=0;t.dump=null}
 function recordChange(R,t,before,mb){
   if(!hist.group)return;
   hist.group.push({rid:R.meta.id,i:t.y*R.meta.w+t.x,before,after:snapT(t),dm:G.money-mb,tick:G.totalTicks});
@@ -147,15 +179,16 @@ function canBuild(R,t,c){
   const lim=R.meta.heatCellsAllowed;
   if(lim&&c.st.type==='Cell'){let n=0;R.tiles.forEach(q=>{if(q.c&&q.c.st.type==='Cell')n++});if(n>=lim)return false}
   if(R.meta.researchComponentsDisabled&&c.type==='researchCenter')return false;
-  return isFree(R)||afford(G.money,priceOf(c));
+  return isFree(R)||afford(G.money,buildPrice(c));
 }
 function canRestore(R,t,c){
-  return !!(t.c&&t.c.id===c.id&&maxLife(R,t)>0&&waterOk(R,t,c)&&(isFree(R)||afford(G.money,priceOf(c))));
+  return !!(t.c&&t.c.id===c.id&&maxLife(R,t)>0&&waterOk(R,t,c)&&(isFree(R)||afford(G.money,priceOf(c,t.fuel))));
 }
 function build(R,t,c){
   const b=snapT(t),mb=G.money;
-  if(!isFree(R))addMoney(-priceOf(c));
-  setComp(R,t,c);if(!isFree(R))G.stats.built++;
+  const fuel=fuelable(c)?((t.c&&t.c.id===c.id)?t.fuel:BUILD.fuel):null;
+  if(!isFree(R))addMoney(-priceOf(c,fuel));
+  t.fuel=fuel;setComp(R,t,c);if(!isFree(R))G.stats.built++;
   t.born=performance.now();hooks.onBuild(R,t);
   recordChange(R,t,b,mb);
 }
@@ -169,7 +202,8 @@ function sellPrice(R,t){
   if(c.st.type==='Cell'){
     const rate=Math.min(1,(c.refund||0)+u.refundBonus);
     const ml=maxLife(R,t);
-    return rate>0&&ml>0?c.price*pm*rate*Math.max(0,t.life)/ml:0;
+    const fp=FUELS[t.fuel]?FUELS[t.fuel].price:1;
+    return rate>0&&ml>0?c.price*fp*pm*rate*Math.max(0,t.life)/ml:0;
   }
   if(!c.refund)return 0;
   let p=c.price*pm*c.refund;
@@ -234,6 +268,11 @@ const PHASES=[
     if(t.c.st.type==='WaterPump')t.water=Math.min(maxWater(R,t),t.water+t.c.st.waterProduction*UB(R,t.c).waterProductionMultiplayer);
     if(t.c.st.type==='WaterExchanger'||(t.c.st.type==='WaterPump'&&t.c.st.balancesWater))balancers.push(t);
   }
+  for(const t of R.tiles){   // manantiales: agua gratis a la pieza de encima y a las 4 vecinas
+    if(t.node!=='spring')continue;
+    const rc=near(R,t,N5).filter(n=>n.c&&n.c.acceptsWater&&n.c.maxWater);
+    for(const n of rc)n.water=Math.min(maxWater(R,n),n.water+SPRING_WATER/rc.length);
+  }
   for(let i=0;i<balancers.length;i++)balanceWater(R,balancers[i]);
   for(let i=balancers.length-1;i>=0;i--)balanceWater(R,balancers[i]);
  }},
@@ -273,9 +312,9 @@ const PHASES=[
       case 'Cell':{
         if(t.life>0){
           if(s.powerProduction>0)e.powerMax+=powerProdOf(R,t.c);
-          t.life=Math.max(0,t.life-EVX.wear);
+          t.life=Math.max(0,t.life-(t.node==='geo'?0:EVX.wear));   // fuente geotérmica: no se desgasta
         }else if((isFree(R)||gres(t.c.id+'AutoRebuild'))&&R.auto&&canRestore(R,t,t.c)){
-          const b=snapT(t);if(!isFree(R))addMoney(-priceOf(t.c));setComp(R,t,t.c);void b}
+          const b=snapT(t);if(!isFree(R))addMoney(-priceOf(t.c,t.fuel));setComp(R,t,t.c);void b}
         break}
       case 'PowerToMoneyConverter':
         e.maxPowerToMoney+=s.maxSellPower*UB(R,t.c).powerSellAmountMultiplayer*t.b.powerToMoneyMultiplayer;break;
@@ -412,7 +451,7 @@ function simulate(R,ticks,mod){
 function analyzePlacement(R,t,c,horizon,baseCache){
   const base=baseCache||simulate(R,horizon);
   const idx=t.y*R.meta.w+t.x;
-  const withC=simulate(R,horizon,C=>{const q=C.tiles[idx];setComp(C,q,c)});
+  const withC=simulate(R,horizon,C=>{const q=C.tiles[idx];q.fuel=fuelable(c)?BUILD.fuel:null;setComp(C,q,c)});
   const key=b=>b.x+','+b.y;
   const baseSet=new Set(base.booms.map(key));
   const extra=withC.booms.filter(b=>!baseSet.has(key(b)));

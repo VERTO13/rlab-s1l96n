@@ -1,7 +1,7 @@
 'use strict';
 /* Service worker: permite usar el juego sin conexión.
    Estrategia: red primero (para recibir actualizaciones) y, si no hay red, la copia guardada. */
-const CACHE='reactor-idle-v10';
+const CACHE='reactor-idle-v11';
 const FILES=['./','index.html','manifest.webmanifest','js/data.js','js/sim.js','js/events.js','js/icons.js','js/audio.js','js/ui.js','js/sync.js',
   'icons/icon-192.png','icons/icon-512.png','icons/icon-maskable-512.png','icons/icon-180.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()))});

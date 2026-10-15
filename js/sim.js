@@ -74,7 +74,7 @@ const compAvailable=(R,c)=>isFree(R)||!c.req||!!gres(c.req);
 /* ---- historial (deshacer / rehacer) ---- */
 const hist={group:null,undo:[],redo:[]};
 /* Anti-abuso: deshacer/rehacer SOLO vale mientras no haya pasado ningún tick desde la acción
-   (o en el laboratorio, que no tiene economía). Si no, se podría construir, dejar producir,
+   (o en reactores sin economía, como la demostración). Si no, se podría construir, dejar producir,
    deshacer para recuperar el 100 % del precio y repetir: producción gratis. */
 const histValid=g=>g.every(e=>G.reactors[e.rid].meta.sandbox||e.tick===G.totalTicks);
 function pruneHistory(){

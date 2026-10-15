@@ -34,9 +34,7 @@ const REACTORS=[
  {id:'challenge2',name:'Reto: 4 celdas de calor',price:125e16,maxPower:100,w:21,h:17,heatCellsAllowed:4,researchComponentsDisabled:true,rows:'wwwwwwwwwwwwwwwwwwwww|'+('w                   w|'.repeat(15))+'wwwwwwwwwwwwwwwwwwwww'},
  {id:'mainland',name:'Tierra firme',price:3e19,maxPower:100,w:25,h:21,rows:'wwwwwwwwwwwwwwwwwwwwwwwww|ww                     ww|'+('w                       w|'.repeat(16))+'ww                     ww|wwwwwwwwwwwwwwwwwwwwwwwww|'},
  {id:'challenge3',name:'Reto: 8 celdas de calor',price:75e19,maxPower:100,w:21,h:17,heatCellsAllowed:8,researchComponentsDisabled:true,rows:'wwwwwwwwwwwwwwwwwwwww|'+('w                   w|'.repeat(15))+'wwwwwwwwwwwwwwwwwwwww'},
- {id:'continent',name:'Continente',price:21e21,maxPower:100,w:25,h:21,rows:'wwwwwwwwwwwwwwwwwwwwwwwww|'+('                         |'.repeat(18))+'wwwwwwwwwwwwwwwwwwwwwwwww|'},
- // Extra (no existe en el original): reactor de pruebas con todo desbloqueado y dinero infinito
- {id:'lab',name:'Laboratorio',price:0,maxPower:1e18,w:25,h:21,sandbox:true,rows:'wwwwwwwwwwwwwwwwwwwwwwwww|'+('w                       w|'.repeat(19))+'wwwwwwwwwwwwwwwwwwwwwwwww'}
+ {id:'continent',name:'Continente',price:21e21,maxPower:100,w:25,h:21,rows:'wwwwwwwwwwwwwwwwwwwwwwwww|'+('                         |'.repeat(18))+'wwwwwwwwwwwwwwwwwwwwwwwww|'}
 ];
 REACTORS.forEach(r=>{
   if(typeof r.rows==='string')r.rows=r.rows.split('|');

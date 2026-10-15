@@ -11,7 +11,7 @@ let sel=null,clip=null,stepMode=false,stepAuto=null,lastPhase=null,previewOk=nul
 const curR=()=>G.reactors[curReactor];
 const isReal=R=>!R.meta.sandbox;
 const anyComp=id=>Object.values(G.reactors).some(R=>isReal(R)&&R.tiles.some(t=>t.c&&t.c.id===id));
-Object.assign(G.stats,{sells:0,slow:0,hoverCell:0,placeInfo:0,lab:0});
+Object.assign(G.stats,{sells:0,slow:0,hoverCell:0,placeInfo:0});
 G.tut=0;G.tutHidden=false;G.unl={};
 const rnd=(a,b)=>a+Math.random()*(b-a);
 const mq=window.matchMedia('(max-width:760px)');
@@ -65,12 +65,12 @@ function loadSave(d,offline){
   if(!d||(d.v!==1&&d.v!==2))return false;
   G.money=d.money;G.totalMoney=d.totalMoney||0;G.totalTicks=d.totalTicks||0;G.rp=d.rp||0;G.research=d.research||{};G.bonusTicks=d.bonusTicks||0;
   G.ach=d.ach||{};G.tut=d.tut||0;G.tutHidden=!!d.tutHidden;G.unl=d.unl||{heat:true,adv:true,menu:true};
-  G.stats=Object.assign({explosions:0,sold:0,built:0,sells:0,slow:0,hoverCell:0,placeInfo:0,lab:0},d.stats||{});
+  G.stats=Object.assign({explosions:0,sold:0,built:0,sells:0,slow:0,hoverCell:0,placeInfo:0},d.stats||{});
   for(const id in G.reactors){const R=G.reactors[id],s=d.reactors[id];if(!s)continue;
-    R.bought=!!s.bought||!!R.meta.sandbox;R.power=s.power||0;R.auto=s.auto!==false;R.ups=s.ups||{};R.ubDirty=true;
+    R.bought=!!s.bought;R.power=s.power||0;R.auto=s.auto!==false;R.ups=s.ups||{};R.ubDirty=true;
     s.tiles.forEach((a,i)=>{const t=R.tiles[i];if(!t)return;if(a&&CBY[a[0]]){t.c=CBY[a[0]];t.heat=a[1]||0;t.water=a[2]||0;t.life=a[3]}else{t.c=null;t.heat=0;t.water=0;t.life=null}});
   }
-  curReactor=d.cur||null;
+  curReactor=(d.cur&&G.reactors[d.cur])?d.cur:null;   // por si el guardado menciona un reactor que ya no existe
   if(offline&&d.savedAt){
     const tps=1000/tickInterval();
     let n=Math.round((Date.now()-d.savedAt)/(1000*OFFLINE_SLOWER)*tps);
@@ -109,7 +109,6 @@ const ACH=[
  {id:'rich',n:'Millonario',d:'Gana $1 M en total.',ok:()=>G.totalMoney>=1e6},
  {id:'nuclear',n:'Era atómica',d:'Investiga las celdas nucleares.',ok:()=>gres('nuclearCell')>=1},
  {id:'island2',n:'Expansión',d:'Compra tu segunda central.',ok:()=>realReactors().filter(R=>R.bought).length>=2},
- {id:'lab',n:'Rata de laboratorio',d:'Abre el Laboratorio.',ok:()=>G.stats.lab>=1},
  {id:'planner',n:'Previsor',d:'Usa la calculadora previa 10 veces.',ok:()=>G.stats.placeInfo>=10}
 ];
 function checkAch(){
@@ -138,9 +137,9 @@ function tutCheck(){
 }
 function renderTut(){
   const el=$('#tut');if(!el)return;
-  if(G.tutHidden||(view==='game'&&curReactor&&isFree(curR()))){el.style.display='none';return} // en el laboratorio no aplica
+  if(G.tutHidden){el.style.display='none';return}
   el.style.display='';
-  if(G.tut>=TUT.length){el.innerHTML='<b>🎓 Tutorial completado.</b> Prueba el <b>Laboratorio</b> para experimentar sin límites. <button class="sm" id="tutX">Ocultar</button>';
+  if(G.tut>=TUT.length){el.innerHTML='<b>🎓 Tutorial completado.</b> Ya conoces lo básico: sigue creciendo, investigando y mejorando tus reactores. <button class="sm" id="tutX">Ocultar</button>';
     $('#tutX').onclick=()=>{G.tutHidden=true;renderTut()};return}
   el.innerHTML=`<div style="display:flex;gap:10px;align-items:center"><div style="flex:1"><div class="small">Tutorial · paso ${G.tut+1} de ${TUT.length}</div><div>${TUT[G.tut].t}</div>
    <div class="st">${TUT.map((_,i)=>`<i class="${i<G.tut?'dn':i===G.tut?'cu':''}"></i>`).join('')}</div></div>
@@ -193,18 +192,16 @@ function renderReactors(){
   for(const m of REACTORS){
     const R=G.reactors[m.id];
     if(!uiPrefs.advanced){
-      if(m.sandbox){if(!(G.stats.sells>=1||G.stats.lab>0))continue}
-      else if(!R.bought){if(shownLocked>=1){hiddenLand++;continue}shownLocked++}
+      if(!R.bought){if(shownLocked>=1){hiddenLand++;continue}shownLocked++}
     }
-    h+=`<div class="card"><div class="nm">${m.name}</div><div class="small">${m.w}×${m.h}${m.sandbox?' · sin límites':''}</div>`;
-    if(m.sandbox)h+=`<div class="small">Todo desbloqueado, dinero infinito. No afecta tu progreso.</div><button data-sel="${m.id}">Abrir</button>`;
-    else if(R.bought)h+=`<div class="small">Dinero <span class="money" data-inc="${m.id}">${nf(R.last.money||0)}</span>/tick<br>Inv. <span class="research" data-rinc="${m.id}">${nf(R.last.research||0)}</span>/tick</div><button data-sel="${m.id}">Abrir</button>`;
+    h+=`<div class="card"><div class="nm">${m.name}</div><div class="small">${m.w}×${m.h}</div>`;
+    if(R.bought)h+=`<div class="small">Dinero <span class="money" data-inc="${m.id}">${nf(R.last.money||0)}</span>/tick<br>Inv. <span class="research" data-rinc="${m.id}">${nf(R.last.research||0)}</span>/tick</div><button data-sel="${m.id}">Abrir</button>`;
     else h+=`<div class="small">Precio<br><b class="money">${m.price?'$'+nf(m.price):'Gratis'}</b></div><button data-buy="${m.id}" class="${afford(G.money,m.price)?'':'cant'}">${afford(G.money,m.price)?'COMPRAR':'MUY CARO'}</button>`;
     h+='</div>';
   }
   if(hiddenLand)h+=`<div class="card" style="opacity:.6"><div class="nm">???</div><div class="small">${hiddenLand} tierra${hiddenLand>1?'s':''} más por descubrir cuando compres la siguiente.</div></div>`;
   viewEl.innerHTML=h;renderTut();
-  viewEl.querySelectorAll('[data-sel]').forEach(b=>b.onclick=()=>{if(b.dataset.sel==='lab')G.stats.lab++;setView('game',b.dataset.sel)});
+  viewEl.querySelectorAll('[data-sel]').forEach(b=>b.onclick=()=>setView('game',b.dataset.sel));
   viewEl.querySelectorAll('[data-buy]').forEach(b=>b.onclick=()=>{
     const m=REACTORS.find(r=>r.id===b.dataset.buy);
     if(afford(G.money,m.price)){addMoney(-m.price,false);G.reactors[m.id].bought=true;sfx.cash();setView('game',m.id)}});
@@ -238,11 +235,10 @@ function renderGame(){
       </div>
       <div id="palcats" class="fbar" style="margin:0 0 6px"></div><div id="palette"></div>
       <div class="row">
-        <button id="bUndo" class="sm" title="Solo mientras no pase un tick (pausa el juego para tener más margen). En el Laboratorio no hay límite.">↶ Deshacer</button><button id="bRedo" class="sm" title="Solo mientras no pase un tick">↷ Rehacer</button>
+        <button id="bUndo" class="sm" title="Solo mientras no pase un tick (pausa el juego para tener más margen).">↶ Deshacer</button><button id="bRedo" class="sm" title="Solo mientras no pase un tick">↷ Rehacer</button>
         <button id="bRestore" class="sm" title="Tecla R">Reponer agotados</button>
       </div>
       <div class="small" id="expInfo"></div>
-      ${isFree(R)?'<div class="row"><button id="bClear" class="sm">Vaciar laboratorio</button></div>':''}
     </div>
     <div class="box" id="selBox"></div>
    </div>
@@ -287,7 +283,6 @@ function renderGame(){
   $('#mPaint').onclick=()=>{paint=!paint;updateButtons()};
   $('#bUndo').onclick=()=>{if(undoLast()){sfx.sell();refreshHud()}};$('#bRedo').onclick=()=>{if(redoLast()){sfx.build();refreshHud()}};
   $('#bRestore').onclick=doRestore;
-  if($('#bClear'))$('#bClear').onclick=()=>{beginGroup();R.tiles.forEach(t=>{if(t.c)sell(R,t)});endGroup();refreshHud()};
   $('#bPause').onclick=()=>{if(stepMode)return;paused=!paused;restartLoop();updateButtons()};
   $('#bFast').onclick=()=>{if(G.bonusTicks>0){playFast=!playFast;restartLoop();refreshHud()}};
   $('#bAuto').onclick=()=>{R.auto=!R.auto;refreshHud()};
@@ -1144,7 +1139,6 @@ $('#bHelp').onclick=()=>{
    <li><b>Aislamiento</b> no acepta calor: sube un +5 % la producción de las celdas adyacentes.</li></ol>
   <p>La <b>Vista de calor</b> muestra el relleno de calor y las flechas por donde viaja. El botón <b>Calculadora</b> (✓ Estable / ⚠) simula los próximos ${HORIZON} ticks y avisa de lo que explotaría; con una pieza elegida, el cuadro que aparece junto al mouse te dice si aguantaría en esa casilla.</p>
   <div class="row"><button id="bDemo2">Ver demostración animada del calor</button></div>
-  <p class="small">El <b>Laboratorio</b> (pestaña Centrales) es un reactor aparte con todo desbloqueado y dinero infinito para experimentar. No afecta tu progreso.</p>
   <p>Tiempo sin jugar: se acumulan <b>ticks extra</b> que puedes gastar con el botón Rápido.</p>`);
   m.querySelector('#cls').onclick=()=>m.remove();
   m.querySelector('#bDemo2').onclick=()=>{m.remove();openDemo()};
